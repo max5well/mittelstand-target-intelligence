@@ -21,13 +21,22 @@ export async function authorizeWorkspaceRequest(
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   const ownerIdentity = getOwnerPreviewIdentity(request.headers);
+  if (ownerIdentity) {
+    return {
+      ok: true,
+      userId: ownerIdentity.id,
+      workspaceId:
+        requestedWorkspaceId ?? "00000000-0000-4000-8000-000000000010",
+      role: "admin",
+    };
+  }
   if (
     (!url || !key) &&
-    (process.env.NODE_ENV !== "production" || ownerIdentity)
+    process.env.NODE_ENV !== "production"
   ) {
     return {
       ok: true,
-      userId: ownerIdentity?.id ?? "00000000-0000-4000-8000-000000000001",
+      userId: "00000000-0000-4000-8000-000000000001",
       workspaceId:
         requestedWorkspaceId ?? "00000000-0000-4000-8000-000000000010",
       role: "admin",

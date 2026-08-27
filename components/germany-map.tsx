@@ -1,125 +1,240 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { LocateFixed, MapPin, X } from "lucide-react";
+import * as maplibregl from "maplibre-gl";
+import type { StyleSpecification } from "maplibre-gl";
+import {
+  Map,
+  Marker,
+  NavigationControl,
+  type MapRef,
+} from "react-map-gl/maplibre";
 import type { Company } from "@/lib/types";
 
-const GERMANY_BOUNDS = {
-  minLat: 47.2,
-  maxLat: 55.2,
-  minLng: 5.5,
-  maxLng: 15.5,
-} as const;
+const GERMANY_BOUNDS: [[number, number], [number, number]] = [
+  [5.5, 47.2],
+  [15.5, 55.2],
+];
+
+const BASEMAP_STYLE: StyleSpecification = {
+  version: 8,
+  sources: {
+    osm: {
+      type: "raster",
+      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+      tileSize: 256,
+      minzoom: 0,
+      maxzoom: 19,
+      attribution:
+        '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>',
+    },
+  },
+  layers: [
+    {
+      id: "osm-basemap",
+      type: "raster",
+      source: "osm",
+      paint: {
+        "raster-saturation": -0.55,
+        "raster-contrast": -0.08,
+        "raster-brightness-min": 0.08,
+        "raster-brightness-max": 0.95,
+      },
+    },
+  ],
+};
+
+type MarkerGroup = {
+  key: string;
+  latitude: number;
+  longitude: number;
+  companies: Company[];
+};
 
 export function GermanyMap({ companies }: { companies: Company[] }) {
-  const [selected, setSelected] = useState<Company | null>(null);
+  const mapRef = useRef<MapRef>(null);
+  const [selected, setSelected] = useState<MarkerGroup | null>(null);
   const [mode, setMode] = useState<"status" | "ownership" | "score">("status");
-  const located = companies.filter(
-    (company) => company.latitude !== null && company.longitude !== null,
-  );
-  const markers = useMemo(
+  const [mapError, setMapError] = useState(false);
+
+  const located = useMemo(
     () =>
-      located.map((company) => ({
-        company,
-        x:
-          ((company.longitude! - GERMANY_BOUNDS.minLng) /
-            (GERMANY_BOUNDS.maxLng - GERMANY_BOUNDS.minLng)) *
-          100,
-        y:
-          (1 -
-            (company.latitude! - GERMANY_BOUNDS.minLat) /
-              (GERMANY_BOUNDS.maxLat - GERMANY_BOUNDS.minLat)) *
-          100,
-      })),
-    [located],
+      companies.filter(
+        (company) => company.latitude !== null && company.longitude !== null,
+      ),
+    [companies],
   );
-  const color = (company: Company) =>
-    mode === "score"
+
+  const markerGroups = useMemo(() => {
+    const groups = new globalThis.Map<string, Company[]>();
+    for (const company of located) {
+      const group = groups.get(company.city) ?? [];
+      group.push(company);
+      groups.set(company.city, group);
+    }
+    return Array.from(groups, ([key, groupedCompanies]) => ({
+      key,
+      latitude:
+        groupedCompanies.reduce(
+          (sum, company) => sum + (company.latitude ?? 0),
+          0,
+        ) / groupedCompanies.length,
+      longitude:
+        groupedCompanies.reduce(
+          (sum, company) => sum + (company.longitude ?? 0),
+          0,
+        ) / groupedCompanies.length,
+      companies: groupedCompanies,
+    }));
+  }, [located]);
+
+  function markerColor(group: MarkerGroup) {
+    const company = [...group.companies].sort(
+      (left, right) => (right.score ?? 0) - (left.score ?? 0),
+    )[0];
+    return mode === "score"
       ? company.score && company.score >= 80
         ? "#10a77f"
         : company.score && company.score >= 65
           ? "#d6a936"
-          : "#9aa49f"
+          : "#7f8b86"
       : mode === "ownership"
         ? company.ownership.includes("Family")
           ? "#1f9d7a"
           : company.ownership.includes("PE-backed")
             ? "#8065b0"
             : "#477b8c"
-        : company.status === "shortlisted"
+        : group.companies.some((item) => item.status === "shortlisted")
           ? "#08a77c"
-          : company.status === "passed"
-            ? "#a1aaa6"
+          : group.companies.every((item) => item.status === "passed")
+            ? "#7f8b86"
             : "#327187";
+  }
+
+  function fitResults() {
+    if (!located.length) return;
+    const longitudes = located.map((company) => company.longitude!);
+    const latitudes = located.map((company) => company.latitude!);
+    mapRef.current?.fitBounds(
+      [
+        [Math.min(...longitudes), Math.min(...latitudes)],
+        [Math.max(...longitudes), Math.max(...latitudes)],
+      ],
+      {
+        padding: { top: 110, right: 80, bottom: 80, left: 80 },
+        duration: 700,
+        maxZoom: 7.5,
+      },
+    );
+  }
+
   return (
-    <div className="relative min-h-[650px] overflow-hidden rounded-xl border border-[#d4d1c9] bg-[#dfe9e5]">
-      <div className="absolute left-4 top-4 z-10 flex flex-wrap gap-2 rounded-lg border border-[#d5d2ca] bg-[#faf9f6]/95 p-2 shadow-sm">
+    <div className="relative h-[620px] min-h-[520px] overflow-hidden rounded-xl border border-[#c9cec9] bg-[#dfe9e5] shadow-[0_14px_50px_rgba(31,55,48,.08)] md:h-[720px]">
+      <Map
+        ref={mapRef}
+        mapLib={maplibregl}
+        mapStyle={BASEMAP_STYLE}
+        initialViewState={{
+          bounds: GERMANY_BOUNDS,
+          fitBoundsOptions: {
+            padding: { top: 88, right: 52, bottom: 58, left: 52 },
+          },
+        }}
+        maxBounds={[2.5, 44.5, 18.5, 57.5]}
+        minZoom={4.2}
+        maxZoom={13}
+        dragRotate={false}
+        pitchWithRotate={false}
+        renderWorldCopies={false}
+        attributionControl={{ compact: true }}
+        onError={() => setMapError(true)}
+        onLoad={() => setMapError(false)}
+        style={{ width: "100%", height: "100%" }}
+      >
+        <NavigationControl position="top-right" showCompass={false} />
+        {markerGroups.map((group) => (
+          <Marker
+            key={group.key}
+            latitude={group.latitude}
+            longitude={group.longitude}
+            anchor="center"
+          >
+            <button
+              onClick={() => setSelected(group)}
+              aria-label={`Open ${group.companies.length} companies near ${group.key}`}
+              className="group grid size-9 place-items-center rounded-full border-[3px] border-white text-xs font-bold text-white shadow-[0_7px_18px_rgba(20,34,30,.28)] transition hover:scale-110 focus-visible:scale-110 md:size-10"
+              style={{ background: markerColor(group) }}
+            >
+              {group.companies.length}
+            </button>
+          </Marker>
+        ))}
+      </Map>
+
+      <div className="absolute left-3 top-3 z-10 flex max-w-[calc(100%-72px)] flex-wrap gap-1.5 rounded-lg border border-[#d5d2ca] bg-[#faf9f6]/95 p-2 shadow-md backdrop-blur md:left-4 md:top-4 md:gap-2">
         {(["status", "ownership", "score"] as const).map((item) => (
           <button
             key={item}
             onClick={() => setMode(item)}
-            className={`rounded px-3 py-1.5 text-[10px] font-semibold capitalize ${mode === item ? "bg-[#14221e] text-white" : "text-[#63706b]"}`}
+            aria-pressed={mode === item}
+            className={`rounded px-3 py-1.5 text-xs font-semibold capitalize ${mode === item ? "bg-[#14221e] text-white" : "text-[#63706b] hover:bg-[#ecebe5]"}`}
           >
             {item}
           </button>
         ))}
-        <button className="ml-2 flex items-center gap-1 border-l border-[#d8d5cd] pl-3 text-[10px] font-semibold text-[#42645b]">
+        <button
+          onClick={fitResults}
+          className="flex items-center gap-1 border-l border-[#d8d5cd] pl-3 text-xs font-semibold text-[#42645b] hover:text-[#0c725b]"
+        >
           <LocateFixed size={12} /> Fit results
         </button>
       </div>
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_25%,rgba(255,255,255,.75),transparent_32%),linear-gradient(135deg,transparent_25%,rgba(255,255,255,.28)_25%,rgba(255,255,255,.28)_26%,transparent_26%)] bg-[length:auto,38px_38px]" />
-      <div className="absolute bottom-[5%] left-[17%] right-[17%] top-[5%] rounded-[47%_40%_50%_42%/26%_33%_42%_38%] border border-[#9fb5ad] bg-[#f5f3ec]/88 shadow-[0_20px_80px_rgba(38,66,57,.12)]" />
-      {markers.map(({ company, x, y }) => (
-        <button
-          key={company.id}
-          onClick={() => setSelected(company)}
-          aria-label={`Open ${company.name}`}
-          className="group absolute z-[2] -translate-x-1/2 -translate-y-1/2"
-          style={{
-            left: `${Math.max(18, Math.min(82, x))}%`,
-            top: `${Math.max(7, Math.min(93, y))}%`,
-          }}
-        >
-          <span
-            className="grid size-8 place-items-center rounded-full border-2 border-white text-[9px] font-bold text-white shadow-lg transition group-hover:scale-110"
-            style={{ background: color(company) }}
-          >
-            {company.city === "Berlin" || company.city === "Hamburg"
-              ? "3"
-              : "1"}
-          </span>
-        </button>
-      ))}
-      <div className="absolute bottom-4 left-4 z-10 rounded-lg border border-[#d4d1c9] bg-[#faf9f6]/95 px-3 py-2 text-[10px] text-[#64716c]">
+
+      <div className="absolute bottom-7 left-3 z-10 max-w-[calc(100%-28px)] rounded-lg border border-[#d4d1c9] bg-[#faf9f6]/95 px-3 py-2 text-xs text-[#53625d] shadow-sm backdrop-blur md:bottom-4 md:left-4">
         {located.length} located · {companies.length - located.length} need
-        geocoding review · cached mock coordinates
+        geocoding review
       </div>
+
+      {mapError && (
+        <div className="absolute bottom-16 left-3 z-10 rounded-lg border border-[#e3c581] bg-[#fff6db] px-3 py-2 text-xs text-[#735a1c] md:left-4">
+          The basemap could not load. Check the network connection and retry.
+        </div>
+      )}
+
       {selected && (
-        <div className="absolute right-4 top-4 z-20 w-[290px] rounded-xl border border-[#d4d1c9] bg-[#faf9f6] p-4 shadow-xl">
+        <div className="absolute bottom-16 right-3 top-auto z-20 max-h-[70%] w-[min(320px,calc(100%-24px))] overflow-y-auto rounded-xl border border-[#d4d1c9] bg-[#faf9f6] p-4 shadow-2xl md:bottom-auto md:right-4 md:top-16">
           <button
             aria-label="Close preview"
             onClick={() => setSelected(null)}
-            className="absolute right-3 top-3"
+            className="absolute right-3 top-3 rounded p-1 text-[#64716c] hover:bg-[#ecebe5]"
           >
             <X size={14} />
           </button>
-          <div className="flex items-center gap-2 text-[#16856b]">
+          <div className="flex items-center gap-2 pr-7 text-[#16856b]">
             <MapPin size={14} />
-            <p className="text-[10px] font-semibold uppercase tracking-[.1em]">
-              {selected.city}, {selected.state}
+            <p className="text-xs font-semibold uppercase tracking-[.1em]">
+              {selected.key} · {selected.companies.length} target
+              {selected.companies.length === 1 ? "" : "s"}
             </p>
           </div>
-          <p className="mt-3 text-sm font-semibold">{selected.name}</p>
-          <p className="mt-2 text-xs leading-5 text-[#6a746f]">
-            {selected.industry} · {selected.employees ?? "Not reported"}{" "}
-            employees · Fit {selected.score ?? "insufficient data"}
-          </p>
-          <a
-            href={`/companies/${selected.id}`}
-            className="mt-4 inline-block text-xs font-semibold text-[#087b62]"
-          >
-            Open company →
-          </a>
+          <div className="mt-3 divide-y divide-[#dedbd3]">
+            {selected.companies.map((company) => (
+              <div key={company.id} className="py-3 first:pt-1 last:pb-0">
+                <p className="pr-4 text-sm font-semibold">{company.name}</p>
+                <p className="mt-1 text-xs leading-5 text-[#6a746f]">
+                  {company.industry} · {company.employees ?? "Not reported"}{" "}
+                  employees · Fit {company.score ?? "insufficient data"}
+                </p>
+                <a
+                  href={`/companies/${company.id}`}
+                  className="mt-2 inline-block text-xs font-semibold text-[#087b62] hover:underline"
+                >
+                  Open company →
+                </a>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

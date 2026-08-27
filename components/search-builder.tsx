@@ -13,11 +13,24 @@ import {
 } from "lucide-react";
 
 const providerCosts = { search: 10, details: 10, financials: 10, owners: 10 };
+const industryOptions = [
+  ["28", "Machinery & equipment"],
+  ["26", "Electronics & optical products"],
+  ["27", "Electrical equipment"],
+  ["22", "Rubber & plastic products"],
+  ["32.5", "Medical and dental instruments"],
+] as const;
 
 export function SearchBuilder() {
   const [open, setOpen] = useState(false);
   const [dailyTarget, setDailyTarget] = useState(40);
   const [mode, setMode] = useState<"lean" | "full" | "custom">("lean");
+  const [industryOpen, setIndustryOpen] = useState(false);
+  const [selectedIndustries, setSelectedIndustries] = useState<string[]>([
+    "28",
+    "26",
+  ]);
+  const [advancedFinancials, setAdvancedFinancials] = useState(false);
   const dailyCost = useMemo(
     () =>
       providerCosts.search +
@@ -46,7 +59,7 @@ export function SearchBuilder() {
           <div className="h-full w-full max-w-[720px] overflow-y-auto bg-[#f8f7f3] shadow-2xl">
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#d9d6ce] bg-[#f8f7f3]/95 px-6 py-5 backdrop-blur">
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[.14em] text-[#16856b]">
+                <p className="text-xs font-semibold uppercase tracking-[.14em] text-[#16856b]">
                   Search builder
                 </p>
                 <h2 className="mt-1 text-xl font-semibold">
@@ -86,9 +99,58 @@ export function SearchBuilder() {
                     </select>
                   </Field>
                   <Field label="WZ2025 industries">
-                    <button className="form-control flex items-center justify-between">
-                      28 · Machinery, 26 · Electronics <ChevronDown size={13} />
-                    </button>
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setIndustryOpen((value) => !value)}
+                        aria-expanded={industryOpen}
+                        className="form-control flex items-center justify-between text-left"
+                      >
+                        <span className="truncate">
+                          {selectedIndustries.length
+                            ? industryOptions
+                                .filter(([code]) =>
+                                  selectedIndustries.includes(code),
+                                )
+                                .map(([code, label]) => `${code} · ${label}`)
+                                .join(", ")
+                            : "Select WZ2025 industries"}
+                        </span>
+                        <ChevronDown
+                          size={13}
+                          className={`shrink-0 transition ${industryOpen ? "rotate-180" : ""}`}
+                        />
+                      </button>
+                      {industryOpen && (
+                        <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-30 rounded-lg border border-[#d8d5cd] bg-white p-2 shadow-xl">
+                          {industryOptions.map(([code, label]) => (
+                            <label
+                              key={code}
+                              className="flex items-center gap-2 rounded px-2 py-2 text-xs normal-case tracking-normal hover:bg-[#f3f2ed]"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedIndustries.includes(code)}
+                                onChange={() =>
+                                  setSelectedIndustries((current) =>
+                                    current.includes(code)
+                                      ? current.filter((item) => item !== code)
+                                      : [...current, code],
+                                  )
+                                }
+                              />
+                              <span className="font-mono text-xs text-[#16856b]">
+                                {code}
+                              </span>
+                              <span>{label}</span>
+                            </label>
+                          ))}
+                          <p className="border-t border-[#ece9e2] px-2 pt-2 text-xs normal-case tracking-normal text-[#7a8580]">
+                            OpenRegister field: industry_codes · WZ2025
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </Field>
                   <Field label="Location">
                     <input defaultValue="Germany" />
@@ -107,26 +169,51 @@ export function SearchBuilder() {
                     type="date"
                   />
                 </div>
-                <button className="mt-4 text-xs font-semibold text-[#16856b]">
-                  + Advanced financials (EBIT, equity, debt…)
+                {advancedFinancials && (
+                  <div className="mt-4 grid gap-4 rounded-xl border border-[#d9e4df] bg-[#f2f7f4] p-4 sm:grid-cols-2">
+                    <Range label="EBIT · EUR" min="" max="" />
+                    <Range label="Equity · EUR" min="" max="" />
+                    <Range label="Financial debt · EUR" min="" max="" />
+                    <Range label="Balance sheet total · EUR" min="" max="" />
+                    <p className="sm:col-span-2 text-xs leading-4 text-[#6f7b76]">
+                      Documented OpenRegister range fields: ebit, equity,
+                      financial_debt, and balance_sheet_total. EUR inputs are
+                      converted to integer cents before the API request.
+                    </p>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setAdvancedFinancials((value) => !value)}
+                  aria-expanded={advancedFinancials}
+                  className="mt-4 text-xs font-semibold text-[#16856b]"
+                >
+                  {advancedFinancials ? "− Hide" : "+ Advanced"} financials
+                  (EBIT, equity, debt…)
                 </button>
               </Section>
               <Section title="Ownership & risk">
                 <div className="grid gap-3 sm:grid-cols-2">
                   {[
-                    "Owner-managed",
-                    "Family-owned",
-                    "Exclude open insolvency",
-                    "Sole owner",
-                  ].map((label, index) => (
+                    ["Owner-managed", "has_representative_owner", true],
+                    ["Family-owned", "is_family_owned", true],
+                    ["Exclude open insolvency", "has_open_insolvency", false],
+                    ["Sole owner", "has_sole_owner", true],
+                  ].map(([label, field, enterprise], index) => (
                     <label
-                      key={label}
+                      key={String(label)}
                       className="flex items-center gap-3 rounded-lg border border-[#dfdcd4] bg-white p-3 text-xs"
                     >
                       <input type="checkbox" defaultChecked={index < 3} />
-                      {label}
-                      {index < 2 && (
-                        <span className="ml-auto rounded bg-[#fff2c8] px-1.5 py-1 text-[9px] font-semibold text-[#6f581e]">
+                      <span>
+                        {label}
+                        <span className="mt-0.5 block font-mono text-xs text-[#7a8580]">
+                          {field}
+                          {field === "has_open_insolvency" ? " = false" : " = true"}
+                        </span>
+                      </span>
+                      {enterprise && (
+                        <span className="ml-auto rounded bg-[#fff2c8] px-1.5 py-1 text-xs font-semibold text-[#6f581e]">
                           Enterprise
                         </span>
                       )}
@@ -175,7 +262,7 @@ export function SearchBuilder() {
                 </div>
               </Section>
               <div className="rounded-xl border border-[#b8d8ce] bg-[#eaf5f1] p-4">
-                <p className="text-[10px] font-semibold uppercase tracking-[.12em] text-[#24735f]">
+                <p className="text-xs font-semibold uppercase tracking-[.12em] text-[#24735f]">
                   Plain-language summary
                 </p>
                 <p className="mt-2 text-sm leading-6">
@@ -190,7 +277,7 @@ export function SearchBuilder() {
                     <p className="text-xs font-semibold">
                       Estimated provider usage
                     </p>
-                    <p className="mt-1 text-[11px] text-white/45">
+                    <p className="mt-1 text-xs text-white/45">
                       Configured rates; actual usage is recorded per job.
                     </p>
                   </div>
@@ -198,7 +285,7 @@ export function SearchBuilder() {
                 </div>
                 <div className="mt-5 grid grid-cols-2 gap-4">
                   <div>
-                    <p className="text-[10px] text-white/45">
+                    <p className="text-xs text-white/45">
                       Per scheduled run
                     </p>
                     <p className="mt-1 text-2xl font-semibold tabular-nums">
@@ -206,7 +293,7 @@ export function SearchBuilder() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-[10px] text-white/45">
+                    <p className="text-xs text-white/45">
                       Monthly estimate · 30 days
                     </p>
                     <p className="mt-1 text-2xl font-semibold tabular-nums">
@@ -214,7 +301,7 @@ export function SearchBuilder() {
                     </p>
                   </div>
                 </div>
-                <p className="mt-4 text-[10px] leading-4 text-white/45">
+                <p className="mt-4 text-xs leading-4 text-white/45">
                   Preview count is not run automatically. Clicking Preview count
                   spends {providerCosts.search} credits.
                 </p>
@@ -265,7 +352,7 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <label className="block text-[10px] font-semibold uppercase tracking-[.1em] text-[#6b7671]">
+    <label className="block text-xs font-semibold uppercase tracking-[.1em] text-[#6b7671]">
       {label}
       <span className="mt-2 block [&_input]:form-control [&_select]:form-control">
         {children}
@@ -286,7 +373,7 @@ function Range({
 }) {
   return (
     <div>
-      <p className="text-[10px] font-semibold uppercase tracking-[.1em] text-[#6b7671]">
+      <p className="text-xs font-semibold uppercase tracking-[.1em] text-[#6b7671]">
         {label}
       </p>
       <div className="mt-2 grid grid-cols-2 gap-2">
@@ -330,7 +417,7 @@ export function SearchCard({
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-semibold">{name}</h2>
             <span
-              className={`rounded-full px-2 py-1 text-[9px] font-semibold ${isActive ? "bg-[#e0f2ec] text-[#236a58]" : "bg-[#eceae5] text-[#717a76]"}`}
+              className={`rounded-full px-2 py-1 text-xs font-semibold ${isActive ? "bg-[#e0f2ec] text-[#236a58]" : "bg-[#eceae5] text-[#717a76]"}`}
             >
               {isActive ? "Active" : "Paused"}
             </span>
@@ -347,7 +434,7 @@ export function SearchCard({
           {isActive ? <CirclePause size={15} /> : <Play size={15} />}
         </button>
       </div>
-      <div className="mt-5 grid grid-cols-3 gap-4 border-t border-[#e3e0d8] pt-4 text-[10px]">
+      <div className="mt-5 grid grid-cols-3 gap-4 border-t border-[#e3e0d8] pt-4 text-xs">
         <div>
           <p className="text-[#84908b]">Last run</p>
           <p className="mt-1 font-semibold">{lastRun}</p>

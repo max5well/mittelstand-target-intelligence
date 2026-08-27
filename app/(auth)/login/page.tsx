@@ -20,7 +20,7 @@ export default async function LoginPage({
           </span>
           <div>
             <p className="text-sm font-semibold">Unternehmen</p>
-            <p className="text-[10px] uppercase tracking-[.14em] text-[#75807c]">
+            <p className="text-xs uppercase tracking-[.14em] text-[#75807c]">
               Private target intelligence
             </p>
           </div>
@@ -28,7 +28,7 @@ export default async function LoginPage({
         <div className="mt-8">
           <div className="flex items-center gap-2 text-[#16856b]">
             <LockKeyhole size={14} />
-            <p className="text-[10px] font-semibold uppercase tracking-[.13em]">
+            <p className="text-xs font-semibold uppercase tracking-[.13em]">
               Invite-only workspace
             </p>
           </div>
@@ -46,7 +46,7 @@ export default async function LoginPage({
             </p>
           )}
           <LoginForm />
-          <p className="mt-5 text-center text-[10px] leading-4 text-[#87908d]">
+          <p className="mt-5 text-center text-xs leading-4 text-[#87908d]">
             There is no public registration. Contact your administrator for an
             invitation.
           </p>

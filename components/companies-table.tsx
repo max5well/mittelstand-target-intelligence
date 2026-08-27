@@ -8,6 +8,7 @@ import {
   useReactTable,
   type ColumnDef,
   type SortingState,
+  type VisibilityState,
 } from "@tanstack/react-table";
 import {
   ArrowDownUp,
@@ -21,6 +22,7 @@ import {
 import Link from "next/link";
 import type { Company, PipelineStatus } from "@/lib/types";
 import { formatMoney, formatPercent, statusLabel } from "@/lib/format";
+import { companiesToCsv } from "@/lib/company-csv";
 
 const allStatuses: Array<PipelineStatus | "all"> = [
   "all",
@@ -34,18 +36,30 @@ const allStatuses: Array<PipelineStatus | "all"> = [
   "passed",
 ];
 
+const columnLabels: Record<string, string> = {
+  city: "Location",
+  industry: "WZ2025 industry",
+  employees: "Employees",
+  revenueCents: "Revenue",
+  ebitdaCents: "EBITDA",
+  ownership: "Ownership",
+  status: "Status",
+  score: "Fit",
+};
+
 export function CompaniesTable({
   initialCompanies,
 }: {
   initialCompanies: Company[];
 }) {
-  const [companies, setCompanies] = useState(initialCompanies);
+  const companies = initialCompanies;
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<PipelineStatus | "all">("all");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [sorting, setSorting] = useState<SortingState>([
     { id: "score", desc: true },
   ]);
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [page, setPage] = useState(0);
   const pageSize = 12;
 
@@ -73,30 +87,20 @@ export function CompaniesTable({
     () => [
       {
         id: "favorite",
+        enableHiding: false,
         header: "",
         cell: ({ row }) => (
-          <button
-            aria-label={`${row.original.favorite ? "Remove" : "Add"} favorite`}
-            onClick={() =>
-              setCompanies((current) =>
-                current.map((item) =>
-                  item.id === row.original.id
-                    ? { ...item, favorite: !item.favorite }
-                    : item,
-                ),
-              )
-            }
-            className="text-[#b48b24]"
-          >
+          <span aria-label={row.original.favorite ? "Favorite" : "Not a favorite"} className="text-[#b48b24]">
             <Star
               size={15}
               fill={row.original.favorite ? "currentColor" : "none"}
             />
-          </button>
+          </span>
         ),
       },
       {
         accessorKey: "name",
+        enableHiding: false,
         header: "Company",
         cell: ({ row }) => (
           <div className="min-w-[260px]">
@@ -106,7 +110,7 @@ export function CompaniesTable({
             >
               {row.original.name}
             </Link>
-            <p className="mt-1 text-[10px] text-[#84908b]">
+            <p className="mt-1 text-xs text-[#84908b]">
               {row.original.openregisterCompanyId} · {row.original.legalForm}
             </p>
           </div>
@@ -118,7 +122,7 @@ export function CompaniesTable({
         cell: ({ row }) => (
           <div>
             <p>{row.original.city}</p>
-            <p className="mt-1 text-[10px] text-[#84908b]">
+            <p className="mt-1 text-xs text-[#84908b]">
               {row.original.state}
             </p>
           </div>
@@ -130,7 +134,7 @@ export function CompaniesTable({
         cell: ({ row }) => (
           <div className="min-w-[180px]">
             <p>{row.original.industry}</p>
-            <p className="mt-1 text-[10px] text-[#84908b]">
+            <p className="mt-1 text-xs text-[#84908b]">
               {row.original.industryCode}
             </p>
           </div>
@@ -147,7 +151,7 @@ export function CompaniesTable({
           ) : (
             <div className="text-right tabular-nums">
               <p>{row.original.employees}</p>
-              <p className="mt-1 text-[10px] text-[#84908b]">
+              <p className="mt-1 text-xs text-[#84908b]">
                 Reported · {row.original.employeeYear}
               </p>
             </div>
@@ -159,7 +163,7 @@ export function CompaniesTable({
         cell: ({ row }) => (
           <div className="text-right tabular-nums">
             <p>{formatMoney(row.original.revenueCents)}</p>
-            <p className="mt-1 text-[10px] text-[#84908b]">
+            <p className="mt-1 text-xs text-[#84908b]">
               {row.original.revenueCents === null
                 ? "Not reported"
                 : `Reported · ${row.original.fiscalYear}`}
@@ -173,7 +177,7 @@ export function CompaniesTable({
         cell: ({ row }) => (
           <div className="text-right tabular-nums">
             <p>{formatMoney(row.original.ebitdaCents)}</p>
-            <p className="mt-1 text-[10px] text-[#84908b]">
+            <p className="mt-1 text-xs text-[#84908b]">
               {formatPercent(
                 row.original.ebitdaCents && row.original.revenueCents
                   ? row.original.ebitdaCents / row.original.revenueCents
@@ -190,7 +194,7 @@ export function CompaniesTable({
         cell: ({ row }) => (
           <div className="min-w-[190px]">
             <p>{row.original.ownership}</p>
-            <p className="mt-1 text-[10px] text-[#84908b]">
+            <p className="mt-1 text-xs text-[#84908b]">
               {Math.round(row.original.ownershipConfidence * 100)}% ·{" "}
               {row.original.ownershipMethod.replaceAll("_", " ")}
             </p>
@@ -200,30 +204,7 @@ export function CompaniesTable({
       {
         accessorKey: "status",
         header: "Status",
-        cell: ({ row }) => (
-          <select
-            aria-label={`Status for ${row.original.name}`}
-            value={row.original.status}
-            onChange={(event) =>
-              setCompanies((current) =>
-                current.map((item) =>
-                  item.id === row.original.id
-                    ? { ...item, status: event.target.value as PipelineStatus }
-                    : item,
-                ),
-              )
-            }
-            className="rounded-full border-0 bg-[#e7eee9] px-2 py-1 text-[10px] font-semibold text-[#385f54]"
-          >
-            {allStatuses
-              .filter((item) => item !== "all")
-              .map((item) => (
-                <option key={item} value={item}>
-                  {statusLabel(item)}
-                </option>
-              ))}
-          </select>
-        ),
+        cell: ({ row }) => <span className="rounded-full bg-[#e7eee9] px-2.5 py-1.5 text-xs font-semibold text-[#385f54]">{statusLabel(row.original.status)}</span>,
       },
       {
         accessorKey: "score",
@@ -248,8 +229,9 @@ export function CompaniesTable({
   const table = useReactTable({
     data: filtered,
     columns,
-    state: { sorting },
+    state: { sorting, columnVisibility },
     onSortingChange: setSorting,
+    onColumnVisibilityChange: setColumnVisibility,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
   });
@@ -257,6 +239,21 @@ export function CompaniesTable({
     .getRowModel()
     .rows.slice(page * pageSize, (page + 1) * pageSize);
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+
+  function exportCsv() {
+    const sortedCompanies = table
+      .getRowModel()
+      .rows.map((row) => row.original);
+    const blob = new Blob(["\uFEFF", companiesToCsv(sortedCompanies)], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `unternehmen-targets-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <section className="mt-6 overflow-hidden rounded-xl border border-[#d6d3cb] bg-[#faf9f6]">
@@ -298,10 +295,36 @@ export function CompaniesTable({
           <Star size={13} fill={favoritesOnly ? "currentColor" : "none"} />{" "}
           Favorites
         </button>
-        <button className="flex h-9 items-center gap-2 rounded-lg border border-[#d7d4cc] bg-white px-3 text-xs">
-          <Columns3 size={13} /> Columns
-        </button>
-        <button className="flex h-9 items-center gap-2 rounded-lg border border-[#d7d4cc] bg-white px-3 text-xs">
+        <details className="group relative">
+          <summary className="flex h-9 list-none items-center gap-2 rounded-lg border border-[#d7d4cc] bg-white px-3 text-xs [&::-webkit-details-marker]:hidden">
+            <Columns3 size={13} /> Columns
+          </summary>
+          <div className="absolute right-0 top-11 z-30 w-52 rounded-lg border border-[#d7d4cc] bg-white p-2 shadow-xl">
+            <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-[.1em] text-[#77817d]">
+              Visible columns
+            </p>
+            {table
+              .getAllLeafColumns()
+              .filter((column) => column.getCanHide())
+              .map((column) => (
+                <label
+                  key={column.id}
+                  className="flex items-center gap-2 rounded px-2 py-2 text-xs hover:bg-[#f3f2ed]"
+                >
+                  <input
+                    type="checkbox"
+                    checked={column.getIsVisible()}
+                    onChange={column.getToggleVisibilityHandler()}
+                  />
+                  {columnLabels[column.id] ?? column.id}
+                </label>
+              ))}
+          </div>
+        </details>
+        <button
+          onClick={exportCsv}
+          className="flex h-9 items-center gap-2 rounded-lg border border-[#d7d4cc] bg-white px-3 text-xs"
+        >
           <Download size={13} /> Export CSV
         </button>
       </div>

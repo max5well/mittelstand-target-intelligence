@@ -104,7 +104,7 @@ export function AnalyticsCharts() {
             <Tooltip />
           </PieChart>
         </ResponsiveContainer>
-        <div className="grid grid-cols-2 gap-2 text-[10px]">
+        <div className="grid grid-cols-2 gap-2 text-xs">
           {ownership.map((item, index) => (
             <div key={item.name} className="flex items-center gap-2">
               <span

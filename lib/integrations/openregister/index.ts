@@ -5,8 +5,24 @@ import { fetchProvider } from "../http";
 
 export const OpenRegisterFilterSchema = z.object({
   field: z.string().min(1),
-  operator: z.string().min(1),
-  value: z.unknown(),
+  value: z.union([z.string(), z.number(), z.boolean()]).optional(),
+  min: z.union([z.string(), z.number()]).optional(),
+  max: z.union([z.string(), z.number()]).optional(),
+  values: z.array(z.union([z.string(), z.number(), z.boolean()])).optional(),
+  keywords: z.array(z.string()).optional(),
+}).superRefine((filter, context) => {
+  if (
+    filter.value === undefined &&
+    filter.min === undefined &&
+    filter.max === undefined &&
+    !filter.values?.length &&
+    !filter.keywords?.length
+  ) {
+    context.addIssue({
+      code: "custom",
+      message: "A documented OpenRegister filter value is required",
+    });
+  }
 });
 
 export const CompanySearchRequestSchema = z.object({

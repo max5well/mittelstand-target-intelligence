@@ -61,7 +61,7 @@ export type Company = {
   longitude: number | null;
   updatedAt: string;
   sourceType: "reported" | "estimated";
-  fictional: true;
+  fictional: boolean;
 };
 
 export type Job = {

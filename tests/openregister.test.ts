@@ -11,13 +11,23 @@ describe("OpenRegister adapter", () => {
   it("validates AND-style documented filters and pagination", () => {
     const request = CompanySearchRequestSchema.parse({
       filters: [
-        { field: "active", operator: "eq", value: true },
-        { field: "revenue", operator: "gte", value: 1_000_000_000 },
+        { field: "active", value: "true" },
+        { field: "revenue", min: "1000000000" },
+        { field: "industry_codes", values: ["28", "26"] },
+        { field: "has_open_insolvency", value: "false" },
       ],
       pagination: { page: 1, per_page: 40 },
     });
-    expect(request.filters).toHaveLength(2);
+    expect(request.filters).toHaveLength(4);
     expect(request.pagination.per_page).toBe(40);
+  });
+  it("rejects filters without a documented value shape", () => {
+    expect(() =>
+      CompanySearchRequestSchema.parse({
+        filters: [{ field: "revenue" }],
+        pagination: { page: 1, per_page: 40 },
+      }),
+    ).toThrow();
   });
   it("deduplicates around stable OpenRegister IDs in mock search results", async () => {
     process.env.MOCK_PROVIDERS = "true";

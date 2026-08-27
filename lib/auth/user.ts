@@ -22,10 +22,7 @@ export async function requireUser(): Promise<AppUser> {
   const ownerIdentity = ownerPreview
     ? getOwnerPreviewIdentity(await headers())
     : null;
-  if (
-    (!url || !key) &&
-    ((mockMode && process.env.NODE_ENV !== "production") || ownerIdentity)
-  ) {
+  if (ownerIdentity || ((!url || !key) && mockMode && process.env.NODE_ENV !== "production")) {
     return {
       id: ownerIdentity?.id ?? "00000000-0000-4000-8000-000000000001",
       email: ownerIdentity?.email ?? "mock.admin@example.com",

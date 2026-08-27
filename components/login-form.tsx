@@ -35,7 +35,7 @@ export function LoginForm() {
   }
   return (
     <form action={submit} className="mt-6 space-y-4">
-      <label className="block text-[10px] font-semibold uppercase tracking-[.1em] text-[#67726e]">
+      <label className="block text-xs font-semibold uppercase tracking-[.1em] text-[#67726e]">
         Email
         <input
           name="email"
@@ -45,7 +45,7 @@ export function LoginForm() {
           placeholder="you@firm.com"
         />
       </label>
-      <label className="block text-[10px] font-semibold uppercase tracking-[.1em] text-[#67726e]">
+      <label className="block text-xs font-semibold uppercase tracking-[.1em] text-[#67726e]">
         Password
         <input
           name="password"

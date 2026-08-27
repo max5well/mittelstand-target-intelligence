@@ -4,12 +4,9 @@ import {
   BarChart3,
   BriefcaseBusiness,
   Building2,
-  Command,
   DatabaseZap,
   Globe2,
-  ListFilter,
   Map,
-  Search,
   Settings,
   SlidersHorizontal,
 } from "lucide-react";
@@ -46,7 +43,7 @@ export function AppShell({
           </span>
           <div>
             <p className="text-sm font-semibold tracking-wide">Unternehmen</p>
-            <p className="text-[10px] uppercase tracking-[.18em] text-white/45">
+            <p className="text-xs uppercase tracking-[.14em] text-white/55">
               Target intelligence
             </p>
           </div>
@@ -69,15 +66,15 @@ export function AppShell({
           })}
         </nav>
         <div className="mt-auto space-y-3 border-t border-white/10 p-4">
-          <div className="rounded-xl bg-white/[.05] p-3">
-            <p className="text-xs font-medium">OpenRegister</p>
-            <p className="mt-1 text-[11px] text-white/45">
-              12,430 mock credits remaining
+          <Link
+            href="/settings?section=integrations"
+            className="block rounded-xl bg-white/[.05] p-3 transition hover:bg-white/[.08]"
+          >
+            <p className="text-xs font-medium">Data integrations</p>
+            <p className="mt-1 text-xs text-white/45">
+              View configuration and verification status
             </p>
-            <div className="mt-3 h-1 rounded bg-white/10">
-              <div className="h-full w-[68%] rounded bg-[#30c7a1]" />
-            </div>
-          </div>
+          </Link>
           <Link
             href="/settings"
             className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm ${pathname === "/settings" ? "bg-white/10 text-white" : "text-white/58 hover:text-white"}`}
@@ -92,28 +89,13 @@ export function AppShell({
           <div className="flex items-center gap-3">
             <BriefcaseBusiness size={16} className="text-[#16856b]" />
             <div>
-              <p className="text-[10px] font-medium uppercase tracking-[.16em] text-[#75807c]">
+              <p className="text-xs font-medium uppercase tracking-[.12em] text-[#75807c]">
                 Investment workspace
               </p>
               <p className="mt-0.5 text-sm font-semibold">DACH Industrials I</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              aria-label="Open command palette"
-              className="hidden h-9 items-center gap-2 rounded-lg border border-[#d8d5cc] bg-white px-3 text-xs text-[#69736f] sm:flex"
-            >
-              <Search size={14} /> Find anything{" "}
-              <span className="ml-6 flex items-center gap-1 rounded border border-[#dedbd2] px-1.5 py-0.5 text-[9px]">
-                <Command size={9} />K
-              </span>
-            </button>
-            <button
-              aria-label="Filter current view"
-              className="grid size-9 place-items-center rounded-lg border border-[#d8d5cc] bg-white"
-            >
-              <ListFilter size={15} />
-            </button>
             <div
               title={userEmail}
               className="grid size-9 place-items-center rounded-full bg-[#dcebe5] text-xs font-semibold text-[#1b6452]"
@@ -142,7 +124,7 @@ export function PageHeader({
   return (
     <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
       <div>
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[.14em] text-[#16856b]">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-[.12em] text-[#16856b]">
           {eyebrow}
         </p>
         <h1 className="text-3xl font-semibold tracking-[-.035em] md:text-[38px]">

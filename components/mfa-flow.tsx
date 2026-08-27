@@ -70,12 +70,12 @@ export function MfaFlow() {
             unoptimized
             className="mx-auto size-44"
           />
-          <p className="mt-2 text-[10px] text-[#69736f]">
+          <p className="mt-2 text-xs text-[#69736f]">
             Scan once, then enter the current code below.
           </p>
         </div>
       )}
-      <label className="text-[10px] font-semibold uppercase tracking-[.1em] text-[#66716d]">
+      <label className="text-xs font-semibold uppercase tracking-[.1em] text-[#66716d]">
         6-digit code
         <input
           name="code"
