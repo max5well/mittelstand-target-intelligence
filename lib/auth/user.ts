@@ -1,6 +1,10 @@
 import { redirect } from "next/navigation";
 import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
+import {
+  getOwnerPreviewIdentity,
+  isOwnerOnlyPreviewMode,
+} from "@/lib/auth/preview";
 
 export type AppUser = {
   id: string;
@@ -14,10 +18,17 @@ export async function requireUser(): Promise<AppUser> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   const mockMode = process.env.MOCK_PROVIDERS !== "false";
-  if ((!url || !key) && mockMode && process.env.NODE_ENV !== "production") {
+  const ownerPreview = isOwnerOnlyPreviewMode();
+  const ownerIdentity = ownerPreview
+    ? getOwnerPreviewIdentity(await headers())
+    : null;
+  if (
+    (!url || !key) &&
+    ((mockMode && process.env.NODE_ENV !== "production") || ownerIdentity)
+  ) {
     return {
-      id: "00000000-0000-4000-8000-000000000001",
-      email: "mock.admin@example.com",
+      id: ownerIdentity?.id ?? "00000000-0000-4000-8000-000000000001",
+      email: ownerIdentity?.email ?? "mock.admin@example.com",
       role: "admin",
       workspaceId: "00000000-0000-4000-8000-000000000010",
       mfaVerified: true,
