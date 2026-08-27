@@ -1,0 +1,375 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import {
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type ColumnDef,
+  type SortingState,
+} from "@tanstack/react-table";
+import {
+  ArrowDownUp,
+  ChevronLeft,
+  ChevronRight,
+  Columns3,
+  Download,
+  Search,
+  Star,
+} from "lucide-react";
+import Link from "next/link";
+import type { Company, PipelineStatus } from "@/lib/types";
+import { formatMoney, formatPercent, statusLabel } from "@/lib/format";
+
+const allStatuses: Array<PipelineStatus | "all"> = [
+  "all",
+  "new",
+  "reviewed",
+  "shortlisted",
+  "contacted",
+  "in_conversation",
+  "nda",
+  "diligence",
+  "passed",
+];
+
+export function CompaniesTable({
+  initialCompanies,
+}: {
+  initialCompanies: Company[];
+}) {
+  const [companies, setCompanies] = useState(initialCompanies);
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState<PipelineStatus | "all">("all");
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [sorting, setSorting] = useState<SortingState>([
+    { id: "score", desc: true },
+  ]);
+  const [page, setPage] = useState(0);
+  const pageSize = 12;
+
+  const filtered = useMemo(
+    () =>
+      companies.filter((company) => {
+        const term = query.toLocaleLowerCase("de");
+        const matchesQuery = [
+          company.name,
+          company.city,
+          company.industry,
+          company.openregisterCompanyId,
+          company.ownerSummary,
+        ].some((value) => value.toLocaleLowerCase("de").includes(term));
+        return (
+          matchesQuery &&
+          (status === "all" || company.status === status) &&
+          (!favoritesOnly || company.favorite)
+        );
+      }),
+    [companies, query, status, favoritesOnly],
+  );
+
+  const columns = useMemo<ColumnDef<Company>[]>(
+    () => [
+      {
+        id: "favorite",
+        header: "",
+        cell: ({ row }) => (
+          <button
+            aria-label={`${row.original.favorite ? "Remove" : "Add"} favorite`}
+            onClick={() =>
+              setCompanies((current) =>
+                current.map((item) =>
+                  item.id === row.original.id
+                    ? { ...item, favorite: !item.favorite }
+                    : item,
+                ),
+              )
+            }
+            className="text-[#b48b24]"
+          >
+            <Star
+              size={15}
+              fill={row.original.favorite ? "currentColor" : "none"}
+            />
+          </button>
+        ),
+      },
+      {
+        accessorKey: "name",
+        header: "Company",
+        cell: ({ row }) => (
+          <div className="min-w-[260px]">
+            <Link
+              href={`/companies/${row.original.id}`}
+              className="font-semibold text-[#1d2926] hover:text-[#087b62]"
+            >
+              {row.original.name}
+            </Link>
+            <p className="mt-1 text-[10px] text-[#84908b]">
+              {row.original.openregisterCompanyId} · {row.original.legalForm}
+            </p>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "city",
+        header: "Location",
+        cell: ({ row }) => (
+          <div>
+            <p>{row.original.city}</p>
+            <p className="mt-1 text-[10px] text-[#84908b]">
+              {row.original.state}
+            </p>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "industry",
+        header: "WZ2025 industry",
+        cell: ({ row }) => (
+          <div className="min-w-[180px]">
+            <p>{row.original.industry}</p>
+            <p className="mt-1 text-[10px] text-[#84908b]">
+              {row.original.industryCode}
+            </p>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "employees",
+        header: "Employees",
+        cell: ({ row }) =>
+          row.original.employees === null ? (
+            <span title="Not reported" className="text-[#8d9692]">
+              —
+            </span>
+          ) : (
+            <div className="text-right tabular-nums">
+              <p>{row.original.employees}</p>
+              <p className="mt-1 text-[10px] text-[#84908b]">
+                Reported · {row.original.employeeYear}
+              </p>
+            </div>
+          ),
+      },
+      {
+        accessorKey: "revenueCents",
+        header: "Revenue",
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums">
+            <p>{formatMoney(row.original.revenueCents)}</p>
+            <p className="mt-1 text-[10px] text-[#84908b]">
+              {row.original.revenueCents === null
+                ? "Not reported"
+                : `Reported · ${row.original.fiscalYear}`}
+            </p>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "ebitdaCents",
+        header: "EBITDA",
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums">
+            <p>{formatMoney(row.original.ebitdaCents)}</p>
+            <p className="mt-1 text-[10px] text-[#84908b]">
+              {formatPercent(
+                row.original.ebitdaCents && row.original.revenueCents
+                  ? row.original.ebitdaCents / row.original.revenueCents
+                  : null,
+              )}{" "}
+              margin
+            </p>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "ownership",
+        header: "Ownership",
+        cell: ({ row }) => (
+          <div className="min-w-[190px]">
+            <p>{row.original.ownership}</p>
+            <p className="mt-1 text-[10px] text-[#84908b]">
+              {Math.round(row.original.ownershipConfidence * 100)}% ·{" "}
+              {row.original.ownershipMethod.replaceAll("_", " ")}
+            </p>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "status",
+        header: "Status",
+        cell: ({ row }) => (
+          <select
+            aria-label={`Status for ${row.original.name}`}
+            value={row.original.status}
+            onChange={(event) =>
+              setCompanies((current) =>
+                current.map((item) =>
+                  item.id === row.original.id
+                    ? { ...item, status: event.target.value as PipelineStatus }
+                    : item,
+                ),
+              )
+            }
+            className="rounded-full border-0 bg-[#e7eee9] px-2 py-1 text-[10px] font-semibold text-[#385f54]"
+          >
+            {allStatuses
+              .filter((item) => item !== "all")
+              .map((item) => (
+                <option key={item} value={item}>
+                  {statusLabel(item)}
+                </option>
+              ))}
+          </select>
+        ),
+      },
+      {
+        accessorKey: "score",
+        header: "Fit",
+        cell: ({ row }) =>
+          row.original.score === null ? (
+            <span title="Insufficient data" className="text-[#8d9692]">
+              —
+            </span>
+          ) : (
+            <span className="grid size-8 place-items-center rounded-full border border-[#afd8cc] font-semibold text-[#087b62]">
+              {row.original.score}
+            </span>
+          ),
+      },
+    ],
+    [],
+  );
+
+  // TanStack Table intentionally returns stateful functions; React Compiler skips this hook.
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const table = useReactTable({
+    data: filtered,
+    columns,
+    state: { sorting },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+  });
+  const rows = table
+    .getRowModel()
+    .rows.slice(page * pageSize, (page + 1) * pageSize);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+
+  return (
+    <section className="mt-6 overflow-hidden rounded-xl border border-[#d6d3cb] bg-[#faf9f6]">
+      <div className="flex flex-wrap items-center gap-3 border-b border-[#dfddd6] p-4">
+        <label className="flex h-9 min-w-[260px] flex-1 items-center gap-2 rounded-lg border border-[#d7d4cc] bg-white px-3 text-xs text-[#707a76]">
+          <Search size={14} />
+          <input
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setPage(0);
+            }}
+            placeholder="Search company, city, owner, register ID…"
+            className="w-full bg-transparent outline-none"
+          />
+        </label>
+        <select
+          aria-label="Filter by status"
+          value={status}
+          onChange={(event) => {
+            setStatus(event.target.value as PipelineStatus | "all");
+            setPage(0);
+          }}
+          className="h-9 rounded-lg border border-[#d7d4cc] bg-white px-3 text-xs"
+        >
+          {allStatuses.map((item) => (
+            <option key={item} value={item}>
+              {item === "all" ? "All statuses" : statusLabel(item)}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={() => {
+            setFavoritesOnly((value) => !value);
+            setPage(0);
+          }}
+          className={`flex h-9 items-center gap-2 rounded-lg border px-3 text-xs ${favoritesOnly ? "border-[#b89b4c] bg-[#fff7dc] text-[#6e571a]" : "border-[#d7d4cc] bg-white"}`}
+        >
+          <Star size={13} fill={favoritesOnly ? "currentColor" : "none"} />{" "}
+          Favorites
+        </button>
+        <button className="flex h-9 items-center gap-2 rounded-lg border border-[#d7d4cc] bg-white px-3 text-xs">
+          <Columns3 size={13} /> Columns
+        </button>
+        <button className="flex h-9 items-center gap-2 rounded-lg border border-[#d7d4cc] bg-white px-3 text-xs">
+          <Download size={13} /> Export CSV
+        </button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[1450px] text-left text-xs">
+          <thead className="sticky top-0 bg-[#f4f2ed] text-[#75807c]">
+            {table.getHeaderGroups().map((group) => (
+              <tr key={group.id}>
+                {group.headers.map((header) => (
+                  <th
+                    key={header.id}
+                    className="border-b border-[#dedbd3] px-4 py-3 font-medium"
+                  >
+                    <button
+                      className="flex items-center gap-1"
+                      onClick={header.column.getToggleSortingHandler()}
+                    >
+                      {flexRender(
+                        header.column.columnDef.header,
+                        header.getContext(),
+                      )}
+                      {header.column.getCanSort() && <ArrowDownUp size={10} />}
+                    </button>
+                  </th>
+                ))}
+              </tr>
+            ))}
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr
+                key={row.id}
+                className="border-b border-[#e6e3dc] transition hover:bg-[#f3f7f4]"
+              >
+                {row.getVisibleCells().map((cell) => (
+                  <td key={cell.id} className="px-4 py-3.5 align-middle">
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex items-center justify-between px-4 py-3 text-xs text-[#6d7773]">
+        <p>
+          {filtered.length} authorized companies · page {page + 1} of{" "}
+          {totalPages}
+        </p>
+        <div className="flex gap-1">
+          <button
+            disabled={page === 0}
+            onClick={() => setPage((value) => Math.max(0, value - 1))}
+            className="grid size-8 place-items-center rounded border border-[#d7d4cc] bg-white disabled:opacity-40"
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <button
+            disabled={page + 1 >= totalPages}
+            onClick={() =>
+              setPage((value) => Math.min(totalPages - 1, value + 1))
+            }
+            className="grid size-8 place-items-center rounded border border-[#d7d4cc] bg-white disabled:opacity-40"
+          >
+            <ChevronRight size={14} />
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
