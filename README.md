@@ -71,8 +71,11 @@ npx supabase db reset
 | `APP_ENCRYPTION_KEY`                   |       Contacts | Personal contact fields must remain unavailable                  |
 | `SENTRY_DSN`                           |       Optional | External error reporting disabled; structured job logs remain    |
 | `MOCK_PROVIDERS`                       |          Local | Set `false` to enable configured live adapters                   |
+| `OWNER_ONLY_PREVIEW_MODE`              |   Private demo | Fictional preview session; never enable on shared/public hosting |
 
 Never prefix secret/service keys with `NEXT_PUBLIC_`. Do not store runtime secrets in GitHub; configure them separately for Vercel Preview and Production.
+
+`OWNER_ONLY_PREVIEW_MODE=true` is reserved for an externally protected, single-owner preview. It accepts a preview session only when the hosting layer supplies an authenticated user ID and email, and it exposes only fictional fixtures. Never enable it on a public or shared deployment; real production environments must use Supabase authentication.
 
 ## Verification
 

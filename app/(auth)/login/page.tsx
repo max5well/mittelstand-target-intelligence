@@ -1,11 +1,15 @@
 import { Building2, LockKeyhole } from "lucide-react";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/login-form";
+import { getOwnerPreviewIdentity } from "@/lib/auth/preview";
 
 export default async function LoginPage({
   searchParams,
 }: {
   searchParams: Promise<{ reason?: string }>;
 }) {
+  if (getOwnerPreviewIdentity(await headers())) redirect("/overview");
   const { reason } = await searchParams;
   return (
     <main className="grid min-h-screen place-items-center bg-[#13201d] p-5">

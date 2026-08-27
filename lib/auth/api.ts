@@ -2,6 +2,7 @@ import "server-only";
 
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { getOwnerPreviewIdentity } from "@/lib/auth/preview";
 
 type ApiAuthorization =
   | {
@@ -19,10 +20,14 @@ export async function authorizeWorkspaceRequest(
   const requestedWorkspaceId = request.headers.get("x-workspace-id");
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-  if ((!url || !key) && process.env.NODE_ENV !== "production") {
+  const ownerIdentity = getOwnerPreviewIdentity(request.headers);
+  if (
+    (!url || !key) &&
+    (process.env.NODE_ENV !== "production" || ownerIdentity)
+  ) {
     return {
       ok: true,
-      userId: "00000000-0000-4000-8000-000000000001",
+      userId: ownerIdentity?.id ?? "00000000-0000-4000-8000-000000000001",
       workspaceId:
         requestedWorkspaceId ?? "00000000-0000-4000-8000-000000000010",
       role: "admin",
