@@ -18,11 +18,18 @@ export async function requireUser(): Promise<AppUser> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   const mockMode = process.env.MOCK_PROVIDERS !== "false";
+  const localAuthBypass =
+    process.env.LOCAL_AUTH_BYPASS === "true" &&
+    process.env.NODE_ENV !== "production";
   const ownerPreview = isOwnerOnlyPreviewMode();
   const ownerIdentity = ownerPreview
     ? getOwnerPreviewIdentity(await headers())
     : null;
-  if (ownerIdentity || ((!url || !key) && mockMode && process.env.NODE_ENV !== "production")) {
+  if (
+    ownerIdentity ||
+    localAuthBypass ||
+    ((!url || !key) && mockMode && process.env.NODE_ENV !== "production")
+  ) {
     return {
       id: ownerIdentity?.id ?? "00000000-0000-4000-8000-000000000001",
       email: ownerIdentity?.email ?? "mock.admin@example.com",

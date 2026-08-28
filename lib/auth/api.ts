@@ -21,6 +21,9 @@ export async function authorizeWorkspaceRequest(
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   const ownerIdentity = getOwnerPreviewIdentity(request.headers);
+  const localAuthBypass =
+    process.env.LOCAL_AUTH_BYPASS === "true" &&
+    process.env.NODE_ENV !== "production";
   if (ownerIdentity) {
     return {
       ok: true,
@@ -31,8 +34,8 @@ export async function authorizeWorkspaceRequest(
     };
   }
   if (
-    (!url || !key) &&
-    process.env.NODE_ENV !== "production"
+    localAuthBypass ||
+    ((!url || !key) && process.env.NODE_ENV !== "production")
   ) {
     return {
       ok: true,

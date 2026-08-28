@@ -2,7 +2,7 @@
 
 Private target intelligence for discovering, assessing, prioritizing, and tracking German Mittelstand acquisition targets.
 
-The application is a decision-support product, not a CRM and not an automated outreach tool. It separates official provider facts from estimates, derived classifications, and analyst input. Mock mode is the default for local development; every fixture is fictional.
+The application is a decision-support product, not a CRM and not an automated outreach tool. It separates official provider facts from estimates, derived classifications, and analyst input. The local database starts empty except for the workspace row; live provider data is added only by explicit runs.
 
 ## What is implemented
 
@@ -15,7 +15,7 @@ The application is a decision-support product, not a CRM and not an automated ou
 - Germany map experience with cached fixture coordinates, visible geocode failures, filter modes, clusters/markers, and target previews. A commercial MapLibre tile/geocoder adapter can replace the fixture visualization.
 - Coverage-aware analytics, provider jobs/usage, retries, and missing-run health indicators.
 - Typed adapters for OpenRegister, Apollo, Firecrawl, Tavily, OpenAI Responses structured output, and commercial geocoding. Zod validates all external boundaries.
-- 48 fictional German company fixtures with missing financials, differing fiscal years, official/Apollo employee conflicts, owner categories, an inferred PE-backed example, ambiguous geocoding, and failed/retrying jobs.
+- An empty-by-default local database with persisted provider usage events and no fictional company records.
 
 ## Architecture
 
@@ -35,12 +35,12 @@ Requires Node.js 22.13 or newer, Docker for the local Supabase stack, and the Su
 ```bash
 npm ci
 cp .env.example .env.local
-npx supabase start
-npx supabase db reset
-npm run dev
+npm run db:local:start
+npm run db:local:reset
+npm run dev:local
 ```
 
-Open `http://localhost:3000`. With `MOCK_PROVIDERS=true` and no Supabase URL, development uses a local mock administrator. This bypass is disabled in production.
+Open `http://localhost:3000`. `dev:local` injects local Supabase credentials and enables a development-only administrator bypass; the bypass is disabled in production. To verify the configured live providers and persist the check results, run `npm run verify:providers`.
 
 Run the migration and seed explicitly:
 
@@ -58,7 +58,8 @@ npx supabase db reset
 | `NEXT_PUBLIC_APP_URL`                  |     Production | Absolute application URL unavailable                             |
 | `NEXT_PUBLIC_SUPABASE_URL`             |     Production | Real authentication/data disabled; development can use mock mode |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` |     Production | Real browser/server user client disabled                         |
-| `SUPABASE_SECRET_KEY`                  |     Jobs/admin | Cron and privileged provider-job orchestration disabled          |
+| `SUPABASE_SECRET_KEY`                  | Local/tooling  | Service-role access disabled                                     |
+| `SUPABASE_SERVER_ACCESS_TOKEN`         | Sites backend | Private server database access disabled                          |
 | `DATABASE_URL`                         |        Tooling | Direct migration/type-generation tooling disabled                |
 | `OPENREGISTER_API_KEY`                 | Live discovery | OpenRegister adapter uses fictional fixtures                     |
 | `APOLLO_API_KEY`                       |       Optional | Organization and people actions hidden/disabled in live mode     |
@@ -71,7 +72,8 @@ npx supabase db reset
 | `APP_ENCRYPTION_KEY`                   |       Contacts | Personal contact fields must remain unavailable                  |
 | `SENTRY_DSN`                           |       Optional | External error reporting disabled; structured job logs remain    |
 | `MOCK_PROVIDERS`                       |          Local | Set `false` to enable configured live adapters                   |
-| `OWNER_ONLY_PREVIEW_MODE`              |   Private demo | Fictional preview session; never enable on shared/public hosting |
+| `LOCAL_AUTH_BYPASS`                    | Local dev only | Local administrator session; ignored in production               |
+| `OWNER_ONLY_PREVIEW_MODE`              |   Private site | Sites owner identity passthrough; never enable on shared/public hosting |
 
 Never prefix secret/service keys with `NEXT_PUBLIC_`. Do not store runtime secrets in GitHub; configure them separately for Vercel Preview and Production.
 

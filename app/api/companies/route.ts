@@ -17,7 +17,7 @@ const ManualCompanySchema = z.object({
 export async function POST(request: Request) {
   const authorization = await authorizeWorkspaceRequest(request, { write: true });
   if (!authorization.ok) return NextResponse.json({ error: authorization.error }, { status: authorization.status });
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SECRET_KEY) return NextResponse.json({ error: "Production database is not configured" }, { status: 503 });
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || (!process.env.SUPABASE_SECRET_KEY && !process.env.SUPABASE_SERVER_ACCESS_TOKEN)) return NextResponse.json({ error: "Production database is not configured" }, { status: 503 });
   const parsed = ManualCompanySchema.safeParse(await request.json());
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid company" }, { status: 400 });
 

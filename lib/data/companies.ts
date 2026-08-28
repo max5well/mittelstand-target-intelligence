@@ -6,7 +6,7 @@ import type { Company, OwnershipCategory, PipelineStatus } from "@/lib/types";
 type Row = Record<string, unknown>;
 
 export async function listCompanies(workspaceId: string): Promise<Company[]> {
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SECRET_KEY) return [];
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || (!process.env.SUPABASE_SECRET_KEY && !process.env.SUPABASE_SERVER_ACCESS_TOKEN)) return [];
   const supabase = createAdminClient();
   const { data: companyRows, error } = await supabase
     .from("companies")
@@ -53,18 +53,18 @@ export async function listCompanies(workspaceId: string): Promise<Company[]> {
     const apolloOrganization = apolloByCompany.get(id);
     const payload = (row.raw_provider_payload ?? {}) as Row;
     const industryCodes = Array.isArray(payload.industry_codes) ? payload.industry_codes : [];
-    const industryCode = String(industryCodes[0] ?? payload.industry_code ?? "—");
+    const industryCode = String(industryCodes[0] ?? payload.industry_code ?? "N/A");
     const fiscalPeriod = financial?.fiscal_period_end ? new Date(String(financial.fiscal_period_end)).getUTCFullYear() : null;
     return {
       id,
       openregisterCompanyId: row.openregister_company_id,
       name: row.legal_name,
-      legalForm: row.legal_form ?? "—",
-      city: String(location?.city ?? "—"),
-      state: String(location?.bundesland ?? "—"),
-      postcode: String(location?.postcode ?? "—"),
+      legalForm: row.legal_form ?? "N/A",
+      city: String(location?.city ?? "N/A"),
+      state: String(location?.bundesland ?? "N/A"),
+      postcode: String(location?.postcode ?? "N/A"),
       industryCode,
-      industry: String(payload.industry_name ?? payload.industry ?? "Not reported"),
+      industry: String(payload.industry_name ?? payload.industry ?? "N/A"),
       website: row.website_url,
       employees: financial?.employees == null ? null : Number(financial.employees),
       employeeYear: fiscalPeriod,
@@ -75,7 +75,7 @@ export async function listCompanies(workspaceId: string): Promise<Company[]> {
       ownership: String(classification?.classification ?? "Unknown") as OwnershipCategory,
       ownershipConfidence: Number(classification?.confidence ?? 0),
       ownershipMethod: (classification?.classification_method ?? "manual") as Company["ownershipMethod"],
-      ownerSummary: String(payload.owner_summary ?? "Not yet researched"),
+      ownerSummary: String(payload.owner_summary ?? "N/A"),
       status: row.status as PipelineStatus,
       score: score?.insufficient_data ? null : score?.score == null ? null : Number(score.score),
       favorite: favoriteIds.has(id),

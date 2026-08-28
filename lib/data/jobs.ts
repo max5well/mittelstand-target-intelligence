@@ -16,7 +16,7 @@ export type StoredJob = {
 };
 
 export async function listJobs(workspaceId: string, companyId?: string): Promise<StoredJob[]> {
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SECRET_KEY) return [];
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || (!process.env.SUPABASE_SECRET_KEY && !process.env.SUPABASE_SERVER_ACCESS_TOKEN)) return [];
   const supabase = createAdminClient();
   let query = supabase
     .from("enrichment_jobs")

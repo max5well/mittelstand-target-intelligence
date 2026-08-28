@@ -145,8 +145,8 @@ export function CompaniesTable({
         header: "Employees",
         cell: ({ row }) =>
           row.original.employees === null ? (
-            <span title="Not reported" className="text-[#8d9692]">
-              —
+            <span title="Not available" className="text-[#8d9692]">
+              N/A
             </span>
           ) : (
             <div className="text-right tabular-nums">
@@ -165,7 +165,7 @@ export function CompaniesTable({
             <p>{formatMoney(row.original.revenueCents)}</p>
             <p className="mt-1 text-xs text-[#84908b]">
               {row.original.revenueCents === null
-                ? "Not reported"
+                ? "N/A"
                 : `Reported · ${row.original.fiscalYear}`}
             </p>
           </div>
@@ -212,7 +212,7 @@ export function CompaniesTable({
         cell: ({ row }) =>
           row.original.score === null ? (
             <span title="Insufficient data" className="text-[#8d9692]">
-              —
+              N/A
             </span>
           ) : (
             <span className="grid size-8 place-items-center rounded-full border border-[#afd8cc] font-semibold text-[#087b62]">

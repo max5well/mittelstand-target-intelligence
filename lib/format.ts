@@ -1,5 +1,5 @@
 export function formatMoney(cents: number | null, compact = true) {
-  if (cents === null) return "—";
+  if (cents === null) return "N/A";
   return new Intl.NumberFormat("en-DE", {
     style: "currency",
     currency: "EUR",
@@ -9,7 +9,7 @@ export function formatMoney(cents: number | null, compact = true) {
 }
 
 export function formatPercent(value: number | null) {
-  if (value === null) return "—";
+  if (value === null) return "N/A";
   return new Intl.NumberFormat("en-DE", {
     style: "percent",
     maximumFractionDigits: 1,

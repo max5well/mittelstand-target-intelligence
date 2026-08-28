@@ -14,7 +14,10 @@ export type IntegrationStatus = {
 
 export function getIntegrationStatuses(): IntegrationStatus[] {
   const destinationConfigured = Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SECRET_KEY,
+    process.env.NEXT_PUBLIC_SUPABASE_URL &&
+      (process.env.SUPABASE_SECRET_KEY ||
+        (process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY &&
+          process.env.SUPABASE_SERVER_ACCESS_TOKEN)),
   );
   const liveMode = process.env.MOCK_PROVIDERS === "false";
   const definitions = [
@@ -24,7 +27,7 @@ export function getIntegrationStatuses(): IntegrationStatus[] {
       env: "OPENREGISTER_API_KEY",
       purpose: "German company discovery, profiles, financials, and ownership",
       capabilities: ["Company search", "Company details", "Financial statements", "Ownership records"],
-      dashboardUrl: "https://app.openregister.de/",
+      dashboardUrl: "https://openregister.de/",
     },
     {
       id: "firecrawl" as const,
@@ -66,6 +69,9 @@ export function getIntegrationStatuses(): IntegrationStatus[] {
 
 export function hasLiveDataBackend() {
   return Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SECRET_KEY,
+    process.env.NEXT_PUBLIC_SUPABASE_URL &&
+      (process.env.SUPABASE_SECRET_KEY ||
+        (process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY &&
+          process.env.SUPABASE_SERVER_ACCESS_TOKEN)),
   );
 }

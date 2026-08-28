@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { authorizeWorkspaceRequest } from "@/lib/auth/api";
+import { createAdminClient } from "@/lib/db/admin";
 import {
   OpenRegisterProvider,
   CompanySearchRequestSchema,
@@ -16,8 +17,19 @@ export async function POST(request: Request) {
       { status: authorization.status },
     );
   try {
+    const startedAt = Date.now();
     const input = CompanySearchRequestSchema.parse(await request.json());
     const result = await new OpenRegisterProvider().search(input);
+    await createAdminClient().from("provider_usage_events").insert({
+      workspace_id: authorization.workspaceId,
+      provider: "openregister",
+      endpoint: "POST /v1/search/company",
+      estimated_credits: 10,
+      actual_credits: 10,
+      request_count: 1,
+      http_status: 200,
+      duration_ms: Date.now() - startedAt,
+    });
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof z.ZodError)
