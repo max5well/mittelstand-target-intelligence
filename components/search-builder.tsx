@@ -37,6 +37,28 @@ type SearchApiResponse = {
   } | null;
 };
 
+type ExecutionMode = "once" | "recurring";
+
+function parseLocalizedNumber(value: string) {
+  const compact = value.trim().replace(/[\s€]/g, "");
+  if (!compact) return Number.NaN;
+
+  if (/^-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(compact))
+    return Number(compact.replace(/\./g, "").replace(",", "."));
+  if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(compact))
+    return Number(compact.replace(/,/g, ""));
+
+  return Number(compact.replace(",", "."));
+}
+
+function formatLocalizedNumber(value: string) {
+  const number = parseLocalizedNumber(value);
+  if (!Number.isFinite(number)) return value;
+  return new Intl.NumberFormat("de-DE", {
+    maximumFractionDigits: 2,
+  }).format(number);
+}
+
 export function SearchBuilder({
   triggerLabel = "Neue gespeicherte Suche",
   preset = acquisitionTargetPreset,
@@ -49,7 +71,7 @@ export function SearchBuilder({
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [activeAction, setActiveAction] = useState<
-    "preview" | "save" | "run" | null
+    "preview" | "save" | "run" | "schedule" | null
   >(null);
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState<"success" | "error" | "info">(
@@ -57,6 +79,7 @@ export function SearchBuilder({
   );
   const [dailyTarget, setDailyTarget] = useState(10);
   const [mode, setMode] = useState<"lean" | "full">("full");
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>("once");
   const [selectedIndustries, setSelectedIndustries] = useState<string[]>([
     ...preset.industryCodes,
   ]);
@@ -80,7 +103,7 @@ export function SearchBuilder({
     [dailyTarget, mode],
   );
 
-  function requestBody(runNow: boolean) {
+  function requestBody(runNow: boolean, activateSchedule = false) {
     const form = formRef.current;
     if (!form) throw new Error("Das Suchformular ist nicht verfügbar.");
     const data = new FormData(form);
@@ -122,8 +145,12 @@ export function SearchBuilder({
       const rawMin = String(data.get(`${field}_min`) ?? "").trim();
       const rawMax = String(data.get(`${field}_max`) ?? "").trim();
       const convert = (value: string) => {
-        if (conversion === "money" && value)
-          return String(Math.round(Number(value) * 100));
+        if (conversion === "money" && value) {
+          const amount = parseLocalizedNumber(value);
+          return Number.isFinite(amount)
+            ? String(Math.round(amount * 100))
+            : value;
+        }
         if (conversion === "date" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
           const [year, month, day] = value.split("-");
           return `${day}-${month}-${year}`;
@@ -166,8 +193,11 @@ export function SearchBuilder({
       filters,
       hydrationMode: mode,
       dailyTarget,
-      scheduleTime: String(data.get("schedule_time") ?? "06:30"),
-      active: data.get("active") === "on",
+      scheduleTime:
+        executionMode === "recurring"
+          ? String(data.get("schedule_time") ?? "06:30")
+          : undefined,
+      active: executionMode === "recurring" && activateSchedule,
       runNow,
     };
   }
@@ -207,22 +237,30 @@ export function SearchBuilder({
     }
   }
 
-  async function saveSearch(runNow: boolean) {
+  async function saveSearch({
+    runNow,
+    activateSchedule,
+  }: {
+    runNow: boolean;
+    activateSchedule: boolean;
+  }) {
     const form = formRef.current;
     if (!form?.reportValidity()) return;
     setBusy(true);
-    setActiveAction(runNow ? "run" : "save");
+    setActiveAction(runNow ? "run" : activateSchedule ? "schedule" : "save");
     setMessageTone("info");
     setMessage(
       runNow
         ? "OpenRegister-Suche wird ausgeführt…"
-        : "Suche wird gespeichert…",
+        : activateSchedule
+          ? "Der tägliche Zeitplan wird aktiviert…"
+          : "Suche wird gespeichert…",
     );
     try {
       const response = await fetch("/api/searches", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody(runNow)),
+        body: JSON.stringify(requestBody(runNow, activateSchedule)),
       });
       const result = (await response.json()) as SearchApiResponse;
       if (!response.ok)
@@ -232,7 +270,9 @@ export function SearchBuilder({
       setMessage(
         result.run
           ? `Lauf abgeschlossen: ${result.run.accepted} neu, ${result.run.duplicates} bereits vorhanden; ${result.run.enrichmentCalls} Anreicherungsaufrufe erfasst (${result.run.creditsUsed} Credits).`
-          : "Suche als Entwurf gespeichert.",
+          : activateSchedule
+            ? "Täglicher Zeitplan aktiviert."
+            : "Suche als Entwurf gespeichert.",
       );
       setMessageTone("success");
       setOpen(false);
@@ -364,6 +404,7 @@ export function SearchBuilder({
                     label="Umsatz · EUR"
                     min={preset.revenueEur.min}
                     max={preset.revenueEur.max}
+                    formattedNumber
                   />
                   <Range
                     field="ebitda"
@@ -371,6 +412,7 @@ export function SearchBuilder({
                     min={preset.preferredEbitdaEur.min}
                     max={preset.preferredEbitdaEur.max}
                     disabled={!requireReportedEbitda}
+                    formattedNumber
                   />
                   <Range
                     field="incorporated_at"
@@ -402,24 +444,33 @@ export function SearchBuilder({
                 </label>
                 {advancedFinancials && (
                   <div className="mt-4 grid gap-4 rounded-xl border border-[#d9e4df] bg-[#f2f7f4] p-4 sm:grid-cols-2">
-                    <Range field="ebit" label="EBIT · EUR" min="" max="" />
+                    <Range
+                      field="ebit"
+                      label="EBIT · EUR"
+                      min=""
+                      max=""
+                      formattedNumber
+                    />
                     <Range
                       field="equity"
                       label="Eigenkapital · EUR"
                       min=""
                       max=""
+                      formattedNumber
                     />
                     <Range
                       field="financial_debt"
                       label="Finanzverbindlichkeiten · EUR"
                       min=""
                       max=""
+                      formattedNumber
                     />
                     <Range
                       field="balance_sheet_total"
                       label="Bilanzsumme · EUR"
                       min=""
                       max=""
+                      formattedNumber
                     />
                     <p className="sm:col-span-2 text-xs leading-4 text-[#6f7b76]">
                       Verfügbare OpenRegister-Felder: EBIT, Eigenkapital,
@@ -439,7 +490,10 @@ export function SearchBuilder({
                     : "+ Erweiterte Finanzdaten (EBIT, Eigenkapital, Schulden…)"}
                 </button>
               </Section>
-              <Section title="Eigentümerstruktur & Risiko">
+              <CollapsibleSection
+                title="Eigentümerstruktur & Risiko"
+                description="Optionale Eigentümer- und Risikofilter"
+              >
                 <div className="grid gap-3 sm:grid-cols-2">
                   {[
                     ["Inhabergeführt", "has_representative_owner", true],
@@ -501,9 +555,66 @@ export function SearchBuilder({
                   erfordern. Im Pro-Tarif können sie nach der
                   Eigentümeranreicherung abgeleitet werden.
                 </p>
-              </Section>
-              <Section title="Ergebnislimit, Datenumfang & Zeitplan">
-                <div className="mb-4 rounded-xl border border-[#b8d8ce] bg-[#eaf5f1] p-4">
+              </CollapsibleSection>
+              <Section title="Datenumfang & Ausführung">
+                <fieldset>
+                  <legend className="text-xs font-semibold uppercase tracking-[.1em] text-[#6b7671]">
+                    Ausführungsart
+                  </legend>
+                  <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                    <label
+                      className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 text-sm transition-colors ${
+                        executionMode === "once"
+                          ? "border-[#78ad9e] bg-[#eaf5f1]"
+                          : "border-[#d8d5cd] bg-white"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="execution_mode"
+                        value="once"
+                        checked={executionMode === "once"}
+                        onChange={() => setExecutionMode("once")}
+                        className="mt-0.5"
+                      />
+                      <span>
+                        <span className="block font-semibold">
+                          Einmaliger Lauf
+                        </span>
+                        <span className="mt-1 block text-xs leading-5 text-[#66736e]">
+                          Jetzt einmal ausführen und danach nicht erneut
+                          starten.
+                        </span>
+                      </span>
+                    </label>
+                    <label
+                      className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 text-sm transition-colors ${
+                        executionMode === "recurring"
+                          ? "border-[#78ad9e] bg-[#eaf5f1]"
+                          : "border-[#d8d5cd] bg-white"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="execution_mode"
+                        value="recurring"
+                        checked={executionMode === "recurring"}
+                        onChange={() => setExecutionMode("recurring")}
+                        className="mt-0.5"
+                      />
+                      <span>
+                        <span className="block font-semibold">
+                          Täglich wiederholen
+                        </span>
+                        <span className="mt-1 block text-xs leading-5 text-[#66736e]">
+                          Jeden Tag zur gewählten Zeit mit demselben Limit
+                          ausführen.
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                </fieldset>
+                <div className="mt-4 rounded-xl border border-[#b8d8ce] bg-[#eaf5f1] p-4">
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                       <label
@@ -517,8 +628,7 @@ export function SearchBuilder({
                         className="mt-1 max-w-md text-xs leading-5 text-[#587068]"
                       >
                         Legt fest, wie viele passende Unternehmen höchstens
-                        gespeichert und angereichert werden. Gültig für manuelle
-                        und geplante Läufe.
+                        gespeichert und angereichert werden.
                       </p>
                     </div>
                     <input
@@ -557,7 +667,7 @@ export function SearchBuilder({
                     ))}
                   </div>
                 </div>
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   <Field label="Datenumfang">
                     <select
                       value={mode}
@@ -571,33 +681,36 @@ export function SearchBuilder({
                       </option>
                     </select>
                   </Field>
-                  <Field label="Ausführungszeit">
-                    <input
-                      name="schedule_time"
-                      type="time"
-                      defaultValue="06:30"
-                    />
-                  </Field>
-                  <Field label="Zeitzone">
-                    <input value="Europe/Berlin" readOnly />
-                  </Field>
+                  {executionMode === "recurring" ? (
+                    <>
+                      <Field label="Tägliche Ausführungszeit">
+                        <input
+                          name="schedule_time"
+                          type="time"
+                          defaultValue="06:30"
+                        />
+                      </Field>
+                      <Field label="Zeitzone">
+                        <input value="Europe/Berlin" readOnly />
+                      </Field>
+                    </>
+                  ) : null}
                 </div>
-                <label className="mt-4 flex items-center gap-3 rounded-lg border border-[#d9e4df] bg-white p-3 text-xs font-semibold">
-                  <input name="active" type="checkbox" />
-                  Täglichen Zeitplan nach dem Speichern aktivieren
-                </label>
               </Section>
               <div className="rounded-xl border border-[#b8d8ce] bg-[#eaf5f1] p-4">
                 <p className="text-xs font-semibold uppercase tracking-[.12em] text-[#24735f]">
                   Zusammenfassung
                 </p>
                 <p className="mt-2 text-sm leading-6">
-                  {preset.description} Regionen: {preset.states.join(", ")};
+                  {preset.description} Regionen: {selectedStates.join(", ")};
                   GmbH- und KG-Kandidaten; 10–50 Mio. € Umsatz; laufende
                   Insolvenzen ausgeschlossen. Ein EBITDA von 2–5 Mio. € ist eine
                   Präferenz, sofern es oben nicht ausdrücklich vorausgesetzt
                   wird. Pro Lauf werden höchstens {dailyTarget} passende
-                  Unternehmen verarbeitet.
+                  Unternehmen verarbeitet.{" "}
+                  {executionMode === "once"
+                    ? "Die Suche wird einmalig ausgeführt."
+                    : "Die Suche wird täglich wiederholt."}
                 </p>
               </div>
               <div className="rounded-xl bg-[#172521] p-5 text-white">
@@ -613,7 +726,11 @@ export function SearchBuilder({
                   </div>
                   <Calculator size={18} className="text-[#54d5b3]" />
                 </div>
-                <div className="mt-5 grid grid-cols-2 gap-4">
+                <div
+                  className={`mt-5 grid gap-4 ${
+                    executionMode === "recurring" ? "grid-cols-2" : ""
+                  }`}
+                >
                   <div>
                     <p className="text-xs text-white/45">
                       Maximal pro Lauf · {dailyTarget} Unternehmen
@@ -622,19 +739,31 @@ export function SearchBuilder({
                       {dailyCost.toLocaleString("de-DE")} Credits
                     </p>
                   </div>
-                  <div>
-                    <p className="text-xs text-white/45">
-                      Monatliche Schätzung · 30 Tage
-                    </p>
-                    <p className="mt-1 text-2xl font-semibold tabular-nums">
-                      {(dailyCost * 30).toLocaleString("de-DE")} Credits
-                    </p>
-                  </div>
+                  {executionMode === "recurring" ? (
+                    <div>
+                      <p className="text-xs text-white/45">
+                        Monatliche Schätzung · 30 Tage
+                      </p>
+                      <p className="mt-1 text-2xl font-semibold tabular-nums">
+                        {(dailyCost * 30).toLocaleString("de-DE")} Credits
+                      </p>
+                    </div>
+                  ) : null}
                 </div>
-                <p className="mt-4 text-xs leading-4 text-white/45">
-                  Die Treffervorschau läuft nicht automatisch. Ein Klick darauf
-                  verbraucht {providerCosts.search} Credits.
-                </p>
+                <div
+                  id="result-count-preview-help"
+                  className="mt-5 border-t border-white/10 pt-4"
+                >
+                  <p className="text-xs font-semibold text-white/80">
+                    Was macht „Treffermenge ermitteln“?
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-white/50">
+                    Die aktuellen Filter werden einmal an OpenRegister gesendet,
+                    um nur die Zahl der passenden Unternehmen anzuzeigen. Es
+                    werden keine Unternehmen gespeichert oder angereichert. Die
+                    Abfrage kostet {providerCosts.search} Credits.
+                  </p>
+                </div>
               </div>
             </div>
             <div className="sticky bottom-0 flex flex-wrap justify-between gap-3 border-t border-[#d9d6ce] bg-[#f8f7f3]/95 px-6 py-4 backdrop-blur">
@@ -657,6 +786,7 @@ export function SearchBuilder({
                 type="button"
                 disabled={busy}
                 onClick={previewCount}
+                aria-describedby="result-count-preview-help"
                 className="flex h-10 items-center gap-2 rounded-lg border border-[#d6d3cb] bg-white px-4 text-xs font-semibold disabled:opacity-50"
               >
                 {activeAction === "preview" ? (
@@ -666,13 +796,15 @@ export function SearchBuilder({
                 )}
                 {activeAction === "preview"
                   ? "Live-Trefferzahl wird geprüft…"
-                  : "Trefferzahl prüfen · 10 Credits"}
+                  : "Treffermenge ermitteln · 10 Credits"}
               </button>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => saveSearch(false)}
+                  onClick={() =>
+                    saveSearch({ runNow: false, activateSchedule: false })
+                  }
                   className="flex h-10 items-center gap-2 rounded-lg border border-[#d6d3cb] bg-white px-4 text-xs font-semibold disabled:opacity-50"
                 >
                   {activeAction === "save" ? (
@@ -685,15 +817,24 @@ export function SearchBuilder({
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => saveSearch(true)}
+                  onClick={() =>
+                    saveSearch({
+                      runNow: executionMode === "once",
+                      activateSchedule: executionMode === "recurring",
+                    })
+                  }
                   className="flex h-10 items-center gap-2 rounded-lg bg-[#13201d] px-4 text-xs font-semibold text-white disabled:opacity-50"
                 >
-                  {activeAction === "run" ? (
+                  {activeAction === "run" || activeAction === "schedule" ? (
                     <LoaderCircle size={14} className="animate-spin" />
+                  ) : executionMode === "once" ? (
+                    <Play size={14} />
                   ) : (
                     <CalendarClock size={14} />
                   )}{" "}
-                  Speichern & jetzt ausführen
+                  {executionMode === "once"
+                    ? "Einmalig ausführen"
+                    : "Täglichen Zeitplan aktivieren"}
                 </button>
               </div>
             </div>
@@ -725,13 +866,18 @@ function IndustrySelector({
   const selectedSet = new Set(selected);
   return (
     <details className="group relative mt-2">
-      <summary className="form-control flex cursor-pointer list-none items-center justify-between text-sm font-normal normal-case tracking-normal marker:hidden">
-        <span className={selected.length ? "text-[#27332f]" : "text-[#7a8580]"}>
+      <summary className="flex min-h-10 w-full cursor-pointer list-none items-center justify-between gap-3 rounded-lg border border-[#d8d5cd] bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal outline-none marker:hidden focus-visible:border-[#2a8f74] focus-visible:ring-3 focus-visible:ring-[#2a8f74]/12 [&::-webkit-details-marker]:hidden">
+        <span
+          className={`min-w-0 flex-1 ${selected.length ? "text-[#27332f]" : "text-[#7a8580]"}`}
+        >
           {selected.length
             ? `${selected.length} ${selected.length === 1 ? "Branche" : "Branchen"} ausgewählt`
             : "Branchen nach Namen auswählen"}
         </span>
-        <ChevronDown size={16} className="transition group-open:rotate-180" />
+        <ChevronDown
+          size={16}
+          className="shrink-0 transition group-open:rotate-180"
+        />
       </summary>
       <div className="absolute z-20 mt-2 w-full min-w-[320px] rounded-xl border border-[#d7d4cc] bg-white p-3 shadow-xl">
         <input
@@ -797,8 +943,10 @@ function StateSelector({
   const selectedSet = new Set(selected);
   return (
     <details className="group relative mt-2">
-      <summary className="form-control flex cursor-pointer list-none items-center justify-between text-sm font-normal normal-case tracking-normal marker:hidden">
-        <span className={selected.length ? "text-[#27332f]" : "text-[#7a8580]"}>
+      <summary className="flex min-h-10 w-full cursor-pointer list-none items-center justify-between gap-3 rounded-lg border border-[#d8d5cd] bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal outline-none marker:hidden focus-visible:border-[#2a8f74] focus-visible:ring-3 focus-visible:ring-[#2a8f74]/12 [&::-webkit-details-marker]:hidden">
+        <span
+          className={`min-w-0 flex-1 ${selected.length ? "text-[#27332f]" : "text-[#7a8580]"}`}
+        >
           {selected.length ? selected.join(", ") : "Alle Bundesländer"}
         </span>
         <ChevronDown
@@ -889,6 +1037,35 @@ function Section({
     </section>
   );
 }
+
+function CollapsibleSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <details className="group rounded-xl border border-[#d8d5cd] bg-white">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-xl px-4 py-3.5 outline-none focus-visible:ring-3 focus-visible:ring-[#2a8f74]/12 [&::-webkit-details-marker]:hidden">
+        <span className="min-w-0">
+          <span className="block text-sm font-semibold">{title}</span>
+          <span className="mt-0.5 block text-xs leading-5 text-[#73807b]">
+            {description}
+          </span>
+        </span>
+        <ChevronDown
+          size={17}
+          className="shrink-0 text-[#64726d] transition group-open:rotate-180"
+        />
+      </summary>
+      <div className="border-t border-[#e5e2db] p-4">{children}</div>
+    </details>
+  );
+}
+
 function Field({
   label,
   children,
@@ -912,6 +1089,7 @@ function Range({
   max,
   type = "number",
   disabled = false,
+  formattedNumber = false,
 }: {
   field: string;
   label: string;
@@ -919,6 +1097,7 @@ function Range({
   max: string;
   type?: string;
   disabled?: boolean;
+  formattedNumber?: boolean;
 }) {
   return (
     <div>
@@ -926,26 +1105,95 @@ function Range({
         {label}
       </p>
       <div className="mt-2 grid grid-cols-2 gap-2">
-        <input
-          name={`${field}_min`}
-          className="form-control"
-          aria-label={`${label} Minimum`}
-          type={type}
-          defaultValue={min}
-          disabled={disabled}
-          placeholder="Minimum"
-        />
-        <input
-          name={`${field}_max`}
-          className="form-control"
-          aria-label={`${label} Maximum`}
-          type={type}
-          defaultValue={max}
-          disabled={disabled}
-          placeholder="Maximum"
-        />
+        {formattedNumber ? (
+          <>
+            <FormattedNumberInput
+              name={`${field}_min`}
+              ariaLabel={`${label} Minimum`}
+              defaultValue={min}
+              disabled={disabled}
+              placeholder="Minimum"
+            />
+            <FormattedNumberInput
+              name={`${field}_max`}
+              ariaLabel={`${label} Maximum`}
+              defaultValue={max}
+              disabled={disabled}
+              placeholder="Maximum"
+            />
+          </>
+        ) : (
+          <>
+            <input
+              name={`${field}_min`}
+              className="form-control"
+              aria-label={`${label} Minimum`}
+              type={type}
+              defaultValue={min}
+              disabled={disabled}
+              placeholder="Minimum"
+            />
+            <input
+              name={`${field}_max`}
+              className="form-control"
+              aria-label={`${label} Maximum`}
+              type={type}
+              defaultValue={max}
+              disabled={disabled}
+              placeholder="Maximum"
+            />
+          </>
+        )}
       </div>
     </div>
+  );
+}
+
+function FormattedNumberInput({
+  name,
+  ariaLabel,
+  defaultValue,
+  disabled,
+  placeholder,
+}: {
+  name: string;
+  ariaLabel: string;
+  defaultValue: string;
+  disabled: boolean;
+  placeholder: string;
+}) {
+  const [value, setValue] = useState(() =>
+    defaultValue ? formatLocalizedNumber(defaultValue) : "",
+  );
+
+  function validate(input: HTMLInputElement) {
+    input.setCustomValidity(
+      !input.value || Number.isFinite(parseLocalizedNumber(input.value))
+        ? ""
+        : "Bitte geben Sie eine gültige Zahl ein.",
+    );
+  }
+
+  return (
+    <input
+      name={name}
+      className="form-control tabular-nums"
+      aria-label={ariaLabel}
+      type="text"
+      inputMode="decimal"
+      value={value}
+      disabled={disabled}
+      placeholder={placeholder}
+      onChange={(event) => {
+        setValue(event.target.value);
+        validate(event.currentTarget);
+      }}
+      onBlur={(event) => {
+        validate(event.currentTarget);
+        if (Number.isFinite(parseLocalizedNumber(event.currentTarget.value)))
+          setValue(formatLocalizedNumber(event.currentTarget.value));
+      }}
+    />
   );
 }
 
