@@ -167,4 +167,34 @@ export class TavilyProvider implements WebResearchProvider {
       retrievedAt: new Date().toISOString(),
     }));
   }
+
+  async discoverOfficialWebsite(input: { companyName: string; city?: string }) {
+    if (process.env.MOCK_PROVIDERS !== "false") return this.research(input);
+    const payload = await fetchProvider(
+      "https://api.tavily.com/search",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.TAVILY_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          query: `\"${input.companyName}\" ${input.city ?? "Germany"} official website Impressum`,
+          search_depth: "advanced",
+          max_results: 5,
+          include_raw_content: true,
+        }),
+      },
+      TavilySchema,
+    );
+    return payload.results.map((result) => ({
+      provider: "tavily" as const,
+      url: result.url,
+      title: result.title,
+      content: result.content,
+      publishedAt: result.published_date ?? null,
+      score: result.score ?? null,
+      retrievedAt: new Date().toISOString(),
+    }));
+  }
 }

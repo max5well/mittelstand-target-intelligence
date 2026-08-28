@@ -3,27 +3,29 @@ import { z } from "zod";
 import { companies } from "@/lib/mock-data";
 import { fetchProvider } from "../http";
 
-export const OpenRegisterFilterSchema = z.object({
-  field: z.string().min(1),
-  value: z.union([z.string(), z.number(), z.boolean()]).optional(),
-  min: z.union([z.string(), z.number()]).optional(),
-  max: z.union([z.string(), z.number()]).optional(),
-  values: z.array(z.union([z.string(), z.number(), z.boolean()])).optional(),
-  keywords: z.array(z.string()).optional(),
-}).superRefine((filter, context) => {
-  if (
-    filter.value === undefined &&
-    filter.min === undefined &&
-    filter.max === undefined &&
-    !filter.values?.length &&
-    !filter.keywords?.length
-  ) {
-    context.addIssue({
-      code: "custom",
-      message: "A documented OpenRegister filter value is required",
-    });
-  }
-});
+export const OpenRegisterFilterSchema = z
+  .object({
+    field: z.string().min(1),
+    value: z.union([z.string(), z.number(), z.boolean()]).optional(),
+    min: z.union([z.string(), z.number()]).optional(),
+    max: z.union([z.string(), z.number()]).optional(),
+    values: z.array(z.union([z.string(), z.number(), z.boolean()])).optional(),
+    keywords: z.array(z.string()).optional(),
+  })
+  .superRefine((filter, context) => {
+    if (
+      filter.value === undefined &&
+      filter.min === undefined &&
+      filter.max === undefined &&
+      !filter.values?.length &&
+      !filter.keywords?.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "A documented OpenRegister filter value is required",
+      });
+    }
+  });
 
 export const CompanySearchRequestSchema = z.object({
   query: z.object({ value: z.string() }).optional(),
@@ -61,6 +63,14 @@ const SearchResponseSchema = z.object({
   pagination: z.record(z.string(), z.unknown()),
 });
 const GenericCompanyResponseSchema = z.record(z.string(), z.unknown());
+const WebsiteLookupResponseSchema = z
+  .object({
+    company_id: z.string(),
+    email: z.string().nullable().optional(),
+    phone: z.string().nullable().optional(),
+    vat_id: z.string().nullable().optional(),
+  })
+  .passthrough();
 
 export type CompanySearchRequest = z.input<typeof CompanySearchRequestSchema>;
 
@@ -70,6 +80,7 @@ export class OpenRegisterProvider {
     companyDetails: 10,
     financials: 10,
     owners: 10,
+    websiteLookup: 10,
   } as const;
   private readonly baseUrl =
     process.env.OPENREGISTER_BASE_URL ?? "https://api.openregister.de";
@@ -129,6 +140,19 @@ export class OpenRegisterProvider {
   }
   async owners(companyId: string) {
     return this.get(`/v1/company/${encodeURIComponent(companyId)}/owners`);
+  }
+
+  async lookupCompanyByUrl(url: string) {
+    if (this.mock)
+      return WebsiteLookupResponseSchema.parse({
+        company_id: companies[0]?.openregisterCompanyId ?? "or_mock_18001",
+      });
+    const query = new URLSearchParams({ url });
+    return fetchProvider(
+      `${this.baseUrl}/v0/search/lookup?${query.toString()}`,
+      { headers: this.headers() },
+      WebsiteLookupResponseSchema,
+    );
   }
 
   private async get(path: string) {

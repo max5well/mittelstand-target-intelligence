@@ -41,6 +41,7 @@ export default async function CompanyDetailPage({
           "details",
           "financials",
           "owners",
+          "website_discovery",
           "apollo_organization",
           "firecrawl_website",
           "tavily_research",
@@ -53,6 +54,7 @@ export default async function CompanyDetailPage({
             | "details"
             | "financials"
             | "owners"
+            | "website_discovery"
             | "apollo_organization"
             | "firecrawl_website"
             | "tavily_research",
@@ -61,7 +63,7 @@ export default async function CompanyDetailPage({
           available: job.available !== false,
         });
       return latest;
-    }, new Map<string, { stage: "details" | "financials" | "owners" | "apollo_organization" | "firecrawl_website" | "tavily_research"; provider: string; completedAt: string | null; available: boolean }>()),
+    }, new Map<string, { stage: "details" | "financials" | "owners" | "website_discovery" | "apollo_organization" | "firecrawl_website" | "tavily_research"; provider: string; completedAt: string | null; available: boolean }>()),
   ).map(([, run]) => run);
 
   return (

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 type Stage =
+  | "website_discovery"
   | "details"
   | "financials"
   | "owners"
@@ -32,6 +33,7 @@ const actions: Array<{
   description: string;
   icon: typeof RefreshCw;
   credits: string;
+  requiredProviders?: Array<"openregister" | "apollo" | "firecrawl" | "tavily">;
 }> = [
   {
     stage: "details",
@@ -56,6 +58,16 @@ const actions: Array<{
     description: "Shareholders and ownership percentages",
     icon: Users,
     credits: "10 cr",
+  },
+  {
+    stage: "website_discovery",
+    provider: "tavily",
+    label: "Find & verify website",
+    description:
+      "Tavily candidate verified against the OpenRegister company ID",
+    icon: Globe2,
+    credits: "up to 12 cr",
+    requiredProviders: ["tavily", "openregister"],
   },
   {
     stage: "apollo_organization",
@@ -100,8 +112,12 @@ export function CompanyActions({
   const latest = new Map(
     previousRuns.map((run) => [`${run.provider}:${run.stage}`, run]),
   );
-  const visibleActions = actions.filter((action) =>
-    availableProviders.includes(action.provider),
+  const visibleActions = actions.filter(
+    (action) =>
+      availableProviders.includes(action.provider) &&
+      (action.requiredProviders ?? []).every((provider) =>
+        availableProviders.includes(provider),
+      ),
   );
 
   async function run(stage: Stage, force: boolean) {
