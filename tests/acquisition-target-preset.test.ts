@@ -1,17 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   acquisitionTargetPreset,
+  climateTechnologyPreset,
   describeAcquisitionPreset,
   matchesAcquisitionLegalForm,
+  roofingPreset,
 } from "@/lib/acquisition-target-preset";
 
 describe("acquisition target preset", () => {
   it("maps the climate-equipment and roofing thesis to WZ 2025 industries", () => {
-    expect(acquisitionTargetPreset.industryCodes).toEqual([
-      "28.25",
-      "43.22",
-      "43.41",
-    ]);
+    expect(climateTechnologyPreset.industryCodes).toEqual(["28.25", "43.22"]);
+    expect(roofingPreset.industryCodes).toEqual(["43.41"]);
     expect(acquisitionTargetPreset.states).toContain("Baden-Württemberg");
     expect(acquisitionTargetPreset.states).toContain("Nordrhein-Westfalen");
   });

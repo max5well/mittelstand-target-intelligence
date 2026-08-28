@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import {
   acquisitionTargetPreset,
+  type AcquisitionTargetPreset,
   describeAcquisitionPreset,
 } from "@/lib/acquisition-target-preset";
 import { germanStates, registerCourtsForStates } from "@/lib/german-states";
@@ -38,8 +39,10 @@ type SearchApiResponse = {
 
 export function SearchBuilder({
   triggerLabel = "Neue gespeicherte Suche",
+  preset = acquisitionTargetPreset,
 }: {
   triggerLabel?: string;
+  preset?: AcquisitionTargetPreset;
 } = {}) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
@@ -55,14 +58,14 @@ export function SearchBuilder({
   const [dailyTarget, setDailyTarget] = useState(10);
   const [mode, setMode] = useState<"lean" | "full">("full");
   const [selectedIndustries, setSelectedIndustries] = useState<string[]>([
-    ...acquisitionTargetPreset.industryCodes,
+    ...preset.industryCodes,
   ]);
   const [industryQuery, setIndustryQuery] = useState("");
   const [selectedStates, setSelectedStates] = useState<string[]>([
-    ...acquisitionTargetPreset.states,
+    ...preset.states,
   ]);
   const [selectedLegalForms, setSelectedLegalForms] = useState<string[]>([
-    ...acquisitionTargetPreset.legalForms,
+    ...preset.legalForms,
   ]);
   const [requireReportedEbitda, setRequireReportedEbitda] = useState(false);
   const [advancedFinancials, setAdvancedFinancials] = useState(false);
@@ -290,16 +293,12 @@ export function SearchBuilder({
               <Section title="Suchangaben">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Field label="Name der Suche">
-                    <input
-                      name="name"
-                      defaultValue={acquisitionTargetPreset.name}
-                      required
-                    />
+                    <input name="name" defaultValue={preset.name} required />
                   </Field>
                   <Field label="Beschreibung">
                     <input
                       name="description"
-                      defaultValue={acquisitionTargetPreset.description}
+                      defaultValue={preset.description}
                     />
                   </Field>
                 </div>
@@ -363,14 +362,14 @@ export function SearchBuilder({
                   <Range
                     field="revenue"
                     label="Umsatz · EUR"
-                    min={acquisitionTargetPreset.revenueEur.min}
-                    max={acquisitionTargetPreset.revenueEur.max}
+                    min={preset.revenueEur.min}
+                    max={preset.revenueEur.max}
                   />
                   <Range
                     field="ebitda"
                     label="EBITDA · EUR"
-                    min={acquisitionTargetPreset.preferredEbitdaEur.min}
-                    max={acquisitionTargetPreset.preferredEbitdaEur.max}
+                    min={preset.preferredEbitdaEur.min}
+                    max={preset.preferredEbitdaEur.max}
                     disabled={!requireReportedEbitda}
                   />
                   <Range
@@ -492,9 +491,7 @@ export function SearchBuilder({
                   <Field label="Unternehmensgegenstand · eines der Stichwörter">
                     <input
                       name="purpose_keywords"
-                      placeholder={acquisitionTargetPreset.purposeKeywordSuggestions.join(
-                        ", ",
-                      )}
+                      placeholder={preset.purposeKeywordSuggestions.join(", ")}
                     />
                   </Field>
                 </div>
@@ -557,12 +554,11 @@ export function SearchBuilder({
                   Zusammenfassung
                 </p>
                 <p className="mt-2 text-sm leading-6">
-                  Klima- und Lüftungstechnik einschließlich Installation sowie
-                  Dachdeckerei; Berlin, Brandenburg, Bayern, Nordrhein-Westfalen
-                  und Baden-Württemberg; GmbH- und KG-Kandidaten; 10–50 Mio. €
-                  Umsatz; laufende Insolvenzen ausgeschlossen. Ein EBITDA von
-                  2–5 Mio. € ist eine Präferenz, sofern es oben nicht
-                  ausdrücklich vorausgesetzt wird.
+                  {preset.description} Regionen: {preset.states.join(", ")};
+                  GmbH- und KG-Kandidaten; 10–50 Mio. € Umsatz; laufende
+                  Insolvenzen ausgeschlossen. Ein EBITDA von 2–5 Mio. € ist eine
+                  Präferenz, sofern es oben nicht ausdrücklich vorausgesetzt
+                  wird.
                 </p>
               </div>
               <div className="rounded-xl bg-[#172521] p-5 text-white">
