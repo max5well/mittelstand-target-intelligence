@@ -6,31 +6,45 @@ import { createAdminClient } from "@/lib/db/admin";
 const CompanyIdSchema = z.string().uuid();
 
 type FavoriteRouteContext = { params: Promise<{ id: string }> };
+type WorkspaceAuthorization = Extract<
+  Awaited<ReturnType<typeof authorizeWorkspaceRequest>>,
+  { ok: true }
+>;
+type AuthorizedCompany =
+  | { ok: false; response: NextResponse }
+  | {
+      ok: true;
+      authorization: WorkspaceAuthorization;
+      companyId: string;
+      supabase: ReturnType<typeof createAdminClient>;
+    };
 
 async function authorizeCompany(
   request: Request,
   context: FavoriteRouteContext,
-) {
+): Promise<AuthorizedCompany> {
   const authorization = await authorizeWorkspaceRequest(request, {
     write: true,
   });
   if (!authorization.ok) {
     return {
+      ok: false,
       response: NextResponse.json(
         { error: authorization.error },
         { status: authorization.status },
       ),
-    } as const;
+    };
   }
 
   const parsedCompanyId = CompanyIdSchema.safeParse((await context.params).id);
   if (!parsedCompanyId.success) {
     return {
+      ok: false,
       response: NextResponse.json(
         { error: "Ungültige Unternehmens-ID" },
         { status: 400 },
       ),
-    } as const;
+    };
   }
 
   if (
@@ -39,11 +53,12 @@ async function authorizeCompany(
       !process.env.SUPABASE_SERVER_ACCESS_TOKEN)
   ) {
     return {
+      ok: false,
       response: NextResponse.json(
         { error: "Produktionsdatenbank ist nicht konfiguriert" },
         { status: 503 },
       ),
-    } as const;
+    };
   }
 
   const supabase = createAdminClient();
@@ -60,31 +75,34 @@ async function authorizeCompany(
       error: companyError.message,
     });
     return {
+      ok: false,
       response: NextResponse.json(
         { error: "Unternehmen konnte nicht geprüft werden" },
         { status: 500 },
       ),
-    } as const;
+    };
   }
   if (!company) {
     return {
+      ok: false,
       response: NextResponse.json(
         { error: "Unternehmen nicht gefunden" },
         { status: 404 },
       ),
-    } as const;
+    };
   }
 
   return {
+    ok: true,
     authorization,
     companyId: parsedCompanyId.data,
     supabase,
-  } as const;
+  };
 }
 
 export async function PUT(request: Request, context: FavoriteRouteContext) {
   const authorized = await authorizeCompany(request, context);
-  if ("response" in authorized) return authorized.response;
+  if (!authorized.ok) return authorized.response;
 
   const { error } = await authorized.supabase.from("favorites").upsert(
     {
@@ -113,7 +131,7 @@ export async function PUT(request: Request, context: FavoriteRouteContext) {
 
 export async function DELETE(request: Request, context: FavoriteRouteContext) {
   const authorized = await authorizeCompany(request, context);
-  if ("response" in authorized) return authorized.response;
+  if (!authorized.ok) return authorized.response;
 
   const { error } = await authorized.supabase
     .from("favorites")

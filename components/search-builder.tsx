@@ -502,10 +502,28 @@ export function SearchBuilder({
                   Eigentümeranreicherung abgeleitet werden.
                 </p>
               </Section>
-              <Section title="Datenumfang & Zeitplan">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Tägliches Ziel">
+              <Section title="Ergebnislimit, Datenumfang & Zeitplan">
+                <div className="mb-4 rounded-xl border border-[#b8d8ce] bg-[#eaf5f1] p-4">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <label
+                        htmlFor="company-result-limit"
+                        className="text-xs font-semibold uppercase tracking-[.1em] text-[#24735f]"
+                      >
+                        Unternehmen pro Lauf
+                      </label>
+                      <p
+                        id="company-result-limit-help"
+                        className="mt-1 max-w-md text-xs leading-5 text-[#587068]"
+                      >
+                        Legt fest, wie viele passende Unternehmen höchstens
+                        gespeichert und angereichert werden. Gültig für manuelle
+                        und geplante Läufe.
+                      </p>
+                    </div>
                     <input
+                      id="company-result-limit"
+                      aria-describedby="company-result-limit-help"
                       type="number"
                       min={1}
                       max={100}
@@ -518,8 +536,28 @@ export function SearchBuilder({
                           ),
                         )
                       }
+                      className="h-11 w-full rounded-lg border border-[#9fc8bb] bg-white px-3 text-lg font-semibold tabular-nums sm:w-28"
                     />
-                  </Field>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {[10, 25, 50, 100].map((limit) => (
+                      <button
+                        key={limit}
+                        type="button"
+                        onClick={() => setDailyTarget(limit)}
+                        aria-pressed={dailyTarget === limit}
+                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                          dailyTarget === limit
+                            ? "border-[#24735f] bg-[#24735f] text-white"
+                            : "border-[#b8d8ce] bg-white text-[#42645b]"
+                        }`}
+                      >
+                        {limit} Unternehmen
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
                   <Field label="Datenumfang">
                     <select
                       value={mode}
@@ -558,7 +596,8 @@ export function SearchBuilder({
                   GmbH- und KG-Kandidaten; 10–50 Mio. € Umsatz; laufende
                   Insolvenzen ausgeschlossen. Ein EBITDA von 2–5 Mio. € ist eine
                   Präferenz, sofern es oben nicht ausdrücklich vorausgesetzt
-                  wird.
+                  wird. Pro Lauf werden höchstens {dailyTarget} passende
+                  Unternehmen verarbeitet.
                 </p>
               </div>
               <div className="rounded-xl bg-[#172521] p-5 text-white">
@@ -577,7 +616,7 @@ export function SearchBuilder({
                 <div className="mt-5 grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-xs text-white/45">
-                      Je geplanter Ausführung
+                      Maximal pro Lauf · {dailyTarget} Unternehmen
                     </p>
                     <p className="mt-1 text-2xl font-semibold tabular-nums">
                       {dailyCost.toLocaleString("de-DE")} Credits
