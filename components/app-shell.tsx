@@ -46,7 +46,7 @@ export function AppShell({
             <p className="text-sm font-semibold tracking-[-.01em]">
               Zielunternehmen
             </p>
-            <p className="text-xs uppercase tracking-[.14em] text-white/55">
+            <p className="whitespace-nowrap text-[10px] uppercase tracking-[.12em] text-white/55">
               Target Intelligence
             </p>
           </div>
