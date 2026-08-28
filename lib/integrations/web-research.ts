@@ -16,7 +16,7 @@ export interface WebResearchProvider {
   isAvailable(): boolean;
   research(input: {
     companyName: string;
-    verifiedDomain: string;
+    verifiedDomain?: string;
     city?: string;
   }): Promise<WebSource[]>;
 }
@@ -25,20 +25,17 @@ const FirecrawlSchema = z
   .object({
     success: z.boolean(),
     data: z
-      .array(
-        z
+      .object({
+        markdown: z.string().optional(),
+        metadata: z
           .object({
-            markdown: z.string().optional(),
-            metadata: z
-              .object({
-                sourceURL: z.string().optional(),
-                title: z.string().optional(),
-              })
-              .passthrough()
-              .optional(),
+            sourceURL: z.string().optional(),
+            title: z.string().optional(),
           })
-          .passthrough(),
-      )
+          .passthrough()
+          .optional(),
+      })
+      .passthrough()
       .optional(),
   })
   .passthrough();
@@ -50,7 +47,9 @@ export class FirecrawlProvider implements WebResearchProvider {
       process.env.MOCK_PROVIDERS !== "false"
     );
   }
-  async research(input: { companyName: string; verifiedDomain: string }) {
+  async research(input: { companyName: string; verifiedDomain?: string }) {
+    if (!input.verifiedDomain)
+      throw new Error("Firecrawl requires a verified company website");
     if (process.env.MOCK_PROVIDERS !== "false")
       return [
         {
@@ -65,7 +64,7 @@ export class FirecrawlProvider implements WebResearchProvider {
         },
       ];
     const payload = await fetchProvider(
-      "https://api.firecrawl.dev/v2/crawl",
+      "https://api.firecrawl.dev/v2/scrape",
       {
         method: "POST",
         headers: {
@@ -74,32 +73,29 @@ export class FirecrawlProvider implements WebResearchProvider {
         },
         body: JSON.stringify({
           url: input.verifiedDomain,
-          limit: 20,
-          includePaths: [
-            "about*",
-            "products*",
-            "services*",
-            "industries*",
-            "management*",
-            "news*",
-            "press*",
-            "careers*",
-            "imprint*",
-          ],
-          excludePaths: ["account*", "cart*", "search*", "calendar*"],
+          formats: ["markdown"],
+          onlyMainContent: true,
+          location: { country: "DE", languages: ["de-DE", "en-US"] },
+          removeBase64Images: true,
+          blockAds: true,
         }),
       },
       FirecrawlSchema,
     );
-    return (payload.data ?? []).map((page) => ({
-      provider: "firecrawl" as const,
-      url: page.metadata?.sourceURL ?? input.verifiedDomain,
-      title: page.metadata?.title ?? null,
-      content: page.markdown ?? "",
-      publishedAt: null,
-      score: null,
-      retrievedAt: new Date().toISOString(),
-    }));
+    const page = payload.data;
+    return page
+      ? [
+          {
+            provider: "firecrawl" as const,
+            url: page.metadata?.sourceURL ?? input.verifiedDomain,
+            title: page.metadata?.title ?? null,
+            content: page.markdown ?? "",
+            publishedAt: null,
+            score: null,
+            retrievedAt: new Date().toISOString(),
+          },
+        ]
+      : [];
   }
 }
 
@@ -126,7 +122,7 @@ export class TavilyProvider implements WebResearchProvider {
   }
   async research(input: {
     companyName: string;
-    verifiedDomain: string;
+    verifiedDomain?: string;
     city?: string;
   }) {
     if (process.env.MOCK_PROVIDERS !== "false")
@@ -151,7 +147,9 @@ export class TavilyProvider implements WebResearchProvider {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          query: `${input.companyName} ${input.city ?? ""} ${input.verifiedDomain}`,
+          query: [input.companyName, input.city, input.verifiedDomain]
+            .filter(Boolean)
+            .join(" "),
           search_depth: "advanced",
           max_results: 10,
           include_raw_content: true,

@@ -1,0 +1,156 @@
+export type GermanState = {
+  name: string;
+  registerCourts: string[];
+};
+
+// OpenRegister does not expose a Bundesland filter. Current register-court
+// jurisdictions provide the provider-supported equivalent without guessing a
+// non-existent API field.
+export const germanStates: GermanState[] = [
+  {
+    name: "Baden-Württemberg",
+    registerCourts: ["Freiburg", "Mannheim", "Stuttgart", "Ulm"],
+  },
+  {
+    name: "Bayern",
+    registerCourts: [
+      "Amberg",
+      "Ansbach",
+      "Aschaffenburg",
+      "Augsburg",
+      "Bamberg",
+      "Bayreuth",
+      "Coburg",
+      "Deggendorf",
+      "Fürth",
+      "Hof",
+      "Ingolstadt",
+      "Kempten (Allgäu)",
+      "Landshut",
+      "Memmingen",
+      "München",
+      "Nürnberg",
+      "Passau",
+      "Regensburg",
+      "Schweinfurt",
+      "Straubing",
+      "Traunstein",
+      "Weiden i. d. OPf.",
+      "Würzburg",
+    ],
+  },
+  { name: "Berlin", registerCourts: ["Berlin (Charlottenburg)"] },
+  {
+    name: "Brandenburg",
+    registerCourts: ["Cottbus", "Frankfurt/Oder", "Neuruppin", "Potsdam"],
+  },
+  { name: "Bremen", registerCourts: ["Bremen"] },
+  { name: "Hamburg", registerCourts: ["Hamburg"] },
+  {
+    name: "Hessen",
+    registerCourts: [
+      "Bad Hersfeld",
+      "Bad Homburg v.d.H.",
+      "Darmstadt",
+      "Eschwege",
+      "Frankfurt am Main",
+      "Friedberg",
+      "Fritzlar",
+      "Fulda",
+      "Gießen",
+      "Hanau",
+      "Kassel",
+      "Korbach",
+      "Königstein",
+      "Limburg",
+      "Marburg",
+      "Offenbach am Main",
+      "Wetzlar",
+      "Wiesbaden",
+    ],
+  },
+  {
+    name: "Mecklenburg-Vorpommern",
+    registerCourts: ["Neubrandenburg", "Rostock", "Schwerin", "Stralsund"],
+  },
+  {
+    name: "Niedersachsen",
+    registerCourts: [
+      "Aurich",
+      "Braunschweig",
+      "Göttingen",
+      "Hannover",
+      "Hildesheim",
+      "Lüneburg",
+      "Oldenburg (Oldenburg)",
+      "Osnabrück",
+      "Stadthagen",
+      "Tostedt",
+      "Walsrode",
+    ],
+  },
+  {
+    name: "Nordrhein-Westfalen",
+    registerCourts: [
+      "Aachen",
+      "Arnsberg",
+      "Bad Oeynhausen",
+      "Bielefeld",
+      "Bochum",
+      "Bonn",
+      "Coesfeld",
+      "Dortmund",
+      "Duisburg",
+      "Düren",
+      "Düsseldorf",
+      "Essen",
+      "Gelsenkirchen",
+      "Gütersloh",
+      "Hagen",
+      "Hamm",
+      "Iserlohn",
+      "Kleve",
+      "Krefeld",
+      "Köln",
+      "Lemgo",
+      "Mönchengladbach",
+      "Münster",
+      "Neuss",
+      "Paderborn",
+      "Recklinghausen",
+      "Siegburg",
+      "Siegen",
+      "Steinfurt",
+      "Wuppertal",
+    ],
+  },
+  {
+    name: "Rheinland-Pfalz",
+    registerCourts: [
+      "Bad Kreuznach",
+      "Kaiserslautern",
+      "Koblenz",
+      "Landau",
+      "Ludwigshafen a.Rhein (Ludwigshafen)",
+      "Mainz",
+      "Montabaur",
+      "Wittlich",
+      "Zweibrücken",
+    ],
+  },
+  { name: "Saarland", registerCourts: ["Saarbrücken"] },
+  { name: "Sachsen", registerCourts: ["Chemnitz", "Dresden", "Leipzig"] },
+  { name: "Sachsen-Anhalt", registerCourts: ["Stendal"] },
+  {
+    name: "Schleswig-Holstein",
+    registerCourts: ["Flensburg", "Kiel", "Lübeck", "Pinneberg"],
+  },
+  { name: "Thüringen", registerCourts: ["Jena"] },
+];
+
+export function registerCourtsForStates(stateNames: string[]) {
+  const selected = new Set(stateNames);
+  return germanStates.flatMap((state) =>
+    selected.has(state.name) ? state.registerCourts : [],
+  );
+}

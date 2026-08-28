@@ -5,15 +5,19 @@ import { useRouter } from "next/navigation";
 import {
   Calculator,
   CalendarClock,
+  Check,
+  ChevronDown,
   CirclePause,
+  LoaderCircle,
   Play,
   Plus,
   Save,
   Search,
 } from "lucide-react";
+import { germanStates, registerCourtsForStates } from "@/lib/german-states";
+import { wz2025Industries } from "@/lib/wz2025";
 
 const providerCosts = { search: 10, details: 10, financials: 10, owners: 10 };
-const wzCodePattern = /^\d{2}(?:\.\d{1,4})?$/;
 
 type SearchApiResponse = {
   error?: string;
@@ -33,11 +37,18 @@ export function SearchBuilder() {
   const formRef = useRef<HTMLFormElement>(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [activeAction, setActiveAction] = useState<
+    "preview" | "save" | "run" | null
+  >(null);
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<"success" | "error" | "info">(
+    "info",
+  );
   const [dailyTarget, setDailyTarget] = useState(10);
   const [mode, setMode] = useState<"lean" | "full">("full");
   const [selectedIndustries, setSelectedIndustries] = useState<string[]>([]);
-  const [industryDraft, setIndustryDraft] = useState("");
+  const [industryQuery, setIndustryQuery] = useState("");
+  const [selectedStates, setSelectedStates] = useState<string[]>([]);
   const [advancedFinancials, setAdvancedFinancials] = useState(false);
   const dailyCost = useMemo(
     () =>
@@ -67,6 +78,9 @@ export function SearchBuilder() {
     if (status !== "all") filters.unshift({ field: "status", value: status });
     if (selectedIndustries.length)
       filters.push({ field: "industry_codes", values: selectedIndustries });
+    const registerCourts = registerCourtsForStates(selectedStates);
+    if (registerCourts.length)
+      filters.push({ field: "register_court", values: registerCourts });
 
     const ranges = [
       ["employees", "plain"],
@@ -105,12 +119,21 @@ export function SearchBuilder() {
     }
     const legalForm = String(data.get("legal_form") ?? "gmbh").toUpperCase();
     const industrySummary = selectedIndustries.length
-      ? ` in WZ2025 ${selectedIndustries.join(", ")}`
+      ? ` in ${selectedIndustries
+          .map(
+            (code) =>
+              wz2025Industries.find((industry) => industry.code === code)?.name,
+          )
+          .filter(Boolean)
+          .join(", ")}`
       : " across all industries";
+    const stateSummary = selectedStates.length
+      ? `, registered in ${selectedStates.join(", ")}`
+      : "";
     return {
       name: String(data.get("name") ?? "").trim(),
       description: String(data.get("description") ?? "").trim(),
-      summary: `Active German ${legalForm} companies${industrySummary}; unavailable fields remain N/A.`,
+      summary: `Active German ${legalForm} companies${industrySummary}${stateSummary}; unavailable fields remain N/A.`,
       filters,
       hydrationMode: mode,
       dailyTarget,
@@ -122,7 +145,9 @@ export function SearchBuilder() {
 
   async function previewCount() {
     setBusy(true);
-    setMessage("");
+    setActiveAction("preview");
+    setMessageTone("info");
+    setMessage("Checking the live OpenRegister count…");
     try {
       const body = requestBody(false);
       const response = await fetch("/api/providers/openregister/search", {
@@ -135,12 +160,18 @@ export function SearchBuilder() {
       });
       const result = (await response.json()) as SearchApiResponse;
       if (!response.ok) throw new Error(result.error ?? "Preview failed");
-      const total = result.pagination?.total_results ?? result.pagination?.total ?? 0;
-      setMessage(`${Number(total).toLocaleString()} matching companies reported by OpenRegister.`);
+      const total =
+        result.pagination?.total_results ?? result.pagination?.total ?? 0;
+      setMessageTone("success");
+      setMessage(
+        `${Number(total).toLocaleString()} matching companies reported by OpenRegister.`,
+      );
     } catch (error) {
+      setMessageTone("error");
       setMessage(error instanceof Error ? error.message : "Preview failed");
     } finally {
       setBusy(false);
+      setActiveAction(null);
     }
   }
 
@@ -148,6 +179,8 @@ export function SearchBuilder() {
     const form = formRef.current;
     if (!form?.reportValidity()) return;
     setBusy(true);
+    setActiveAction(runNow ? "run" : "save");
+    setMessageTone("info");
     setMessage(runNow ? "Running OpenRegister search…" : "Saving search…");
     try {
       const response = await fetch("/api/searches", {
@@ -156,34 +189,25 @@ export function SearchBuilder() {
         body: JSON.stringify(requestBody(runNow)),
       });
       const result = (await response.json()) as SearchApiResponse;
-      if (!response.ok) throw new Error(result.error ?? "Unable to save search");
+      if (!response.ok)
+        throw new Error(result.error ?? "Unable to save search");
       setMessage(
         result.run
           ? `Run complete: ${result.run.accepted} new, ${result.run.duplicates} already present; ${result.run.enrichmentCalls} enrichment calls recorded (${result.run.creditsUsed} credits).`
           : "Search saved as a draft.",
       );
+      setMessageTone("success");
       setOpen(false);
       router.refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Search setup failed");
+      setMessageTone("error");
+      setMessage(
+        error instanceof Error ? error.message : "Search setup failed",
+      );
     } finally {
       setBusy(false);
+      setActiveAction(null);
     }
-  }
-
-  function addIndustryCodes() {
-    const candidates = industryDraft
-      .split(/[\s,;]+/)
-      .map((value) => value.trim())
-      .filter(Boolean);
-    const invalid = candidates.filter((code) => !wzCodePattern.test(code));
-    if (invalid.length) {
-      setMessage(`Use exact WZ2025 codes such as 56.11 or 71.12. Invalid: ${invalid.join(", ")}`);
-      return;
-    }
-    setSelectedIndustries((current) => Array.from(new Set([...current, ...candidates])));
-    setIndustryDraft("");
-    setMessage("");
   }
   return (
     <div className="flex flex-col items-start gap-2 md:items-end">
@@ -203,7 +227,11 @@ export function SearchBuilder() {
           aria-modal="true"
           aria-label="Create saved search"
         >
-          <form ref={formRef} onSubmit={(event) => event.preventDefault()} className="h-full w-full max-w-[720px] overflow-y-auto bg-[#f8f7f3] shadow-2xl">
+          <form
+            ref={formRef}
+            onSubmit={(event) => event.preventDefault()}
+            className="h-full w-full max-w-[720px] overflow-y-auto bg-[#f8f7f3] shadow-2xl"
+          >
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#d9d6ce] bg-[#f8f7f3]/95 px-6 py-5 backdrop-blur">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[.14em] text-[#16856b]">
@@ -224,10 +252,17 @@ export function SearchBuilder() {
               <Section title="Search identity">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Field label="Search name">
-                    <input name="name" defaultValue="German industrial targets" required />
+                    <input
+                      name="name"
+                      defaultValue="German industrial targets"
+                      required
+                    />
                   </Field>
                   <Field label="Description">
-                    <input name="description" placeholder="Optional investment thesis context" />
+                    <input
+                      name="description"
+                      placeholder="Optional investment thesis context"
+                    />
                   </Field>
                 </div>
               </Section>
@@ -246,52 +281,34 @@ export function SearchBuilder() {
                       <option value="ug">UG (haftungsbeschränkt)</option>
                     </select>
                   </Field>
-                  <Field label="WZ2025 industries">
-                    <div>
-                      <div className="flex gap-2">
-                        <input
-                          value={industryDraft}
-                          onChange={(event) => setIndustryDraft(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault();
-                              addIndustryCodes();
-                            }
-                          }}
-                          placeholder="e.g. 56.11, 71.12"
-                          aria-label="Exact WZ2025 industry codes"
-                        />
-                        <button
-                          type="button"
-                          onClick={addIndustryCodes}
-                          className="rounded-lg border border-[#cfcac0] bg-white px-3 text-xs font-semibold normal-case tracking-normal"
-                        >
-                          Add
-                        </button>
-                      </div>
-                      {selectedIndustries.length ? (
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          {selectedIndustries.map((code) => (
-                            <button
-                              type="button"
-                              key={code}
-                              onClick={() => setSelectedIndustries((current) => current.filter((item) => item !== code))}
-                              className="rounded-full bg-[#e2efe9] px-2.5 py-1 font-mono text-xs font-medium normal-case tracking-normal text-[#216b59]"
-                              aria-label={`Remove WZ2025 ${code}`}
-                            >
-                              {code} ×
-                            </button>
-                          ))}
-                        </div>
-                      ) : null}
-                      <p className="mt-2 text-xs font-normal normal-case leading-5 tracking-normal text-[#7a8580]">
-                        Enter one or more exact WZ2025 codes. Leave empty to search all industries.
-                      </p>
-                    </div>
-                  </Field>
-                  <Field label="Location">
-                    <input value="Germany" readOnly />
-                  </Field>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[.1em] text-[#6b7671]">
+                      Industries
+                    </p>
+                    <IndustrySelector
+                      query={industryQuery}
+                      onQueryChange={setIndustryQuery}
+                      selected={selectedIndustries}
+                      onSelectedChange={setSelectedIndustries}
+                    />
+                    <p className="mt-2 text-xs leading-5 text-[#7a8580]">
+                      Select industries by name. The required WZ 2025 codes are
+                      added behind the scenes.
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[.1em] text-[#6b7671]">
+                      Location
+                    </p>
+                    <StateSelector
+                      selected={selectedStates}
+                      onSelectedChange={setSelectedStates}
+                    />
+                    <p className="mt-2 text-xs leading-5 text-[#7a8580]">
+                      Germany is fixed. Selected states are matched through
+                      their current register courts.
+                    </p>
+                  </div>
                 </div>
               </Section>
               <Section title="Size & financials">
@@ -311,8 +328,18 @@ export function SearchBuilder() {
                   <div className="mt-4 grid gap-4 rounded-xl border border-[#d9e4df] bg-[#f2f7f4] p-4 sm:grid-cols-2">
                     <Range field="ebit" label="EBIT · EUR" min="" max="" />
                     <Range field="equity" label="Equity · EUR" min="" max="" />
-                    <Range field="financial_debt" label="Financial debt · EUR" min="" max="" />
-                    <Range field="balance_sheet_total" label="Balance sheet total · EUR" min="" max="" />
+                    <Range
+                      field="financial_debt"
+                      label="Financial debt · EUR"
+                      min=""
+                      max=""
+                    />
+                    <Range
+                      field="balance_sheet_total"
+                      label="Balance sheet total · EUR"
+                      min=""
+                      max=""
+                    />
                     <p className="sm:col-span-2 text-xs leading-4 text-[#6f7b76]">
                       Documented OpenRegister range fields: ebit, equity,
                       financial_debt, and balance_sheet_total. EUR inputs are
@@ -352,7 +379,9 @@ export function SearchBuilder() {
                         {label}
                         <span className="mt-0.5 block font-mono text-xs text-[#7a8580]">
                           {field}
-                          {field === "has_open_insolvency" ? " = false" : " = true"}
+                          {field === "has_open_insolvency"
+                            ? " = false"
+                            : " = true"}
                         </span>
                       </span>
                       {enterprise && (
@@ -396,7 +425,11 @@ export function SearchBuilder() {
                     </select>
                   </Field>
                   <Field label="Schedule">
-                    <input name="schedule_time" type="time" defaultValue="06:30" />
+                    <input
+                      name="schedule_time"
+                      type="time"
+                      defaultValue="06:30"
+                    />
                   </Field>
                   <Field label="Timezone">
                     <input value="Europe/Berlin" readOnly />
@@ -413,7 +446,8 @@ export function SearchBuilder() {
                 </p>
                 <p className="mt-2 text-sm leading-6">
                   The summary is generated from the filters you select. Missing
-                  provider fields remain N/A and are never filled with dummy data.
+                  provider fields remain N/A and are never filled with dummy
+                  data.
                 </p>
               </div>
               <div className="rounded-xl bg-[#172521] p-5 text-white">
@@ -430,9 +464,7 @@ export function SearchBuilder() {
                 </div>
                 <div className="mt-5 grid grid-cols-2 gap-4">
                   <div>
-                    <p className="text-xs text-white/45">
-                      Per scheduled run
-                    </p>
+                    <p className="text-xs text-white/45">Per scheduled run</p>
                     <p className="mt-1 text-2xl font-semibold tabular-nums">
                       {dailyCost.toLocaleString()} cr
                     </p>
@@ -452,18 +484,50 @@ export function SearchBuilder() {
                 </p>
               </div>
             </div>
-            {message ? (
-              <p role="status" className="mx-6 mb-3 rounded-lg bg-[#edf4f1] px-3 py-2 text-xs leading-5 text-[#42645b]">
-                {message}
-              </p>
-            ) : null}
             <div className="sticky bottom-0 flex flex-wrap justify-between gap-3 border-t border-[#d9d6ce] bg-[#f8f7f3]/95 px-6 py-4 backdrop-blur">
-              <button type="button" disabled={busy} onClick={previewCount} className="flex h-10 items-center gap-2 rounded-lg border border-[#d6d3cb] bg-white px-4 text-xs font-semibold disabled:opacity-50">
-                <Search size={14} /> Preview count · 10 credits
+              {message ? (
+                <p
+                  role={messageTone === "error" ? "alert" : "status"}
+                  aria-live="polite"
+                  className={`w-full rounded-lg border px-4 py-3 text-sm font-medium leading-5 ${
+                    messageTone === "error"
+                      ? "border-[#e3b9b2] bg-[#f8e9e6] text-[#8b3e35]"
+                      : messageTone === "success"
+                        ? "border-[#b5d9cd] bg-[#e8f4ef] text-[#286b59]"
+                        : "border-[#cfd8d4] bg-[#edf4f1] text-[#42645b]"
+                  }`}
+                >
+                  {message}
+                </p>
+              ) : null}
+              <button
+                type="button"
+                disabled={busy}
+                onClick={previewCount}
+                className="flex h-10 items-center gap-2 rounded-lg border border-[#d6d3cb] bg-white px-4 text-xs font-semibold disabled:opacity-50"
+              >
+                {activeAction === "preview" ? (
+                  <LoaderCircle size={14} className="animate-spin" />
+                ) : (
+                  <Search size={14} />
+                )}
+                {activeAction === "preview"
+                  ? "Checking live count…"
+                  : "Preview count · 10 credits"}
               </button>
               <div className="flex gap-2">
-                <button type="button" disabled={busy} onClick={() => saveSearch(false)} className="flex h-10 items-center gap-2 rounded-lg border border-[#d6d3cb] bg-white px-4 text-xs font-semibold disabled:opacity-50">
-                  <Save size={14} /> Save draft
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => saveSearch(false)}
+                  className="flex h-10 items-center gap-2 rounded-lg border border-[#d6d3cb] bg-white px-4 text-xs font-semibold disabled:opacity-50"
+                >
+                  {activeAction === "save" ? (
+                    <LoaderCircle size={14} className="animate-spin" />
+                  ) : (
+                    <Save size={14} />
+                  )}{" "}
+                  Save draft
                 </button>
                 <button
                   type="button"
@@ -471,7 +535,12 @@ export function SearchBuilder() {
                   onClick={() => saveSearch(true)}
                   className="flex h-10 items-center gap-2 rounded-lg bg-[#13201d] px-4 text-xs font-semibold text-white disabled:opacity-50"
                 >
-                  <CalendarClock size={14} /> Save & run now
+                  {activeAction === "run" ? (
+                    <LoaderCircle size={14} className="animate-spin" />
+                  ) : (
+                    <CalendarClock size={14} />
+                  )}{" "}
+                  Save & run now
                 </button>
               </div>
             </div>
@@ -479,6 +548,137 @@ export function SearchBuilder() {
         </div>
       )}
     </div>
+  );
+}
+
+function IndustrySelector({
+  query,
+  onQueryChange,
+  selected,
+  onSelectedChange,
+}: {
+  query: string;
+  onQueryChange: (value: string) => void;
+  selected: string[];
+  onSelectedChange: (value: string[]) => void;
+}) {
+  const filteredIndustries = useMemo(() => {
+    const term = query.trim().toLocaleLowerCase("en");
+    if (!term) return wz2025Industries;
+    return wz2025Industries.filter((industry) =>
+      industry.name.toLocaleLowerCase("en").includes(term),
+    );
+  }, [query]);
+  const selectedSet = new Set(selected);
+  return (
+    <details className="group relative mt-2">
+      <summary className="form-control flex cursor-pointer list-none items-center justify-between text-sm font-normal normal-case tracking-normal marker:hidden">
+        <span className={selected.length ? "text-[#27332f]" : "text-[#7a8580]"}>
+          {selected.length
+            ? `${selected.length} industr${selected.length === 1 ? "y" : "ies"} selected`
+            : "Select industries by name"}
+        </span>
+        <ChevronDown size={16} className="transition group-open:rotate-180" />
+      </summary>
+      <div className="absolute z-20 mt-2 w-full min-w-[320px] rounded-xl border border-[#d7d4cc] bg-white p-3 shadow-xl">
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => onQueryChange(event.target.value)}
+          placeholder="Search e.g. electronics, engineering…"
+          aria-label="Search industries by name"
+          className="form-control"
+        />
+        <div className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-[#ebe8e1]">
+          {filteredIndustries.length ? (
+            filteredIndustries.map((industry) => {
+              const checked = selectedSet.has(industry.code);
+              return (
+                <label
+                  key={industry.code}
+                  className="flex cursor-pointer items-start gap-2 border-b border-[#efede7] px-3 py-2.5 text-sm font-normal normal-case leading-5 tracking-normal last:border-0 hover:bg-[#f4f7f5]"
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() =>
+                      onSelectedChange(
+                        checked
+                          ? selected.filter((code) => code !== industry.code)
+                          : [...selected, industry.code],
+                      )
+                    }
+                    className="mt-0.5"
+                  />
+                  <span>{industry.name}</span>
+                </label>
+              );
+            })
+          ) : (
+            <p className="p-4 text-sm text-[#7a8580]">
+              No industry name matches that search.
+            </p>
+          )}
+        </div>
+        {selected.length ? (
+          <button
+            type="button"
+            onClick={() => onSelectedChange([])}
+            className="mt-2 text-xs font-semibold text-[#087b62]"
+          >
+            Clear selected industries
+          </button>
+        ) : null}
+      </div>
+    </details>
+  );
+}
+
+function StateSelector({
+  selected,
+  onSelectedChange,
+}: {
+  selected: string[];
+  onSelectedChange: (value: string[]) => void;
+}) {
+  const selectedSet = new Set(selected);
+  return (
+    <details className="group relative mt-2">
+      <summary className="form-control flex cursor-pointer list-none items-center justify-between text-sm font-normal normal-case tracking-normal marker:hidden">
+        <span className={selected.length ? "text-[#27332f]" : "text-[#7a8580]"}>
+          {selected.length ? selected.join(", ") : "All German states"}
+        </span>
+        <ChevronDown
+          size={16}
+          className="shrink-0 transition group-open:rotate-180"
+        />
+      </summary>
+      <div className="absolute right-0 z-20 mt-2 max-h-72 w-full min-w-[320px] overflow-y-auto rounded-xl border border-[#d7d4cc] bg-white p-2 shadow-xl">
+        {germanStates.map((state) => {
+          const checked = selectedSet.has(state.name);
+          return (
+            <label
+              key={state.name}
+              className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-normal normal-case tracking-normal hover:bg-[#f4f7f5]"
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={() =>
+                  onSelectedChange(
+                    checked
+                      ? selected.filter((name) => name !== state.name)
+                      : [...selected, state.name],
+                  )
+                }
+              />
+              <span className="flex-1">{state.name}</span>
+              {checked ? <Check size={14} className="text-[#16856b]" /> : null}
+            </label>
+          );
+        })}
+      </div>
+    </details>
   );
 }
 

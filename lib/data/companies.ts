@@ -1,12 +1,22 @@
 import "server-only";
 
 import { createAdminClient } from "@/lib/db/admin";
+import {
+  formatGermanRegisterCourt,
+  formatGermanRegisterReference,
+} from "@/lib/register";
 import type { Company, OwnershipCategory, PipelineStatus } from "@/lib/types";
+import { getWz2025IndustryName } from "@/lib/wz2025";
 
 type Row = Record<string, unknown>;
 
 export async function listCompanies(workspaceId: string): Promise<Company[]> {
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || (!process.env.SUPABASE_SECRET_KEY && !process.env.SUPABASE_SERVER_ACCESS_TOKEN)) return [];
+  if (
+    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    (!process.env.SUPABASE_SECRET_KEY &&
+      !process.env.SUPABASE_SERVER_ACCESS_TOKEN)
+  )
+    return [];
   const supabase = createAdminClient();
   const { data: companyRows, error } = await supabase
     .from("companies")
@@ -17,16 +27,62 @@ export async function listCompanies(workspaceId: string): Promise<Company[]> {
   if (!companyRows?.length) return [];
 
   const ids = companyRows.map((row) => row.id);
-  const [locations, financials, ownership, owners, management, scores, geocoding, favorites, apollo] = await Promise.all([
-    supabase.from("company_locations").select("*").in("company_id", ids).order("retrieved_at", { ascending: false }),
-    supabase.from("company_financial_periods").select("*").in("company_id", ids).order("fiscal_period_end", { ascending: false }),
-    supabase.from("company_ownership_classifications").select("*").in("company_id", ids).eq("is_current", true),
-    supabase.from("company_owners").select("*").in("company_id", ids).order("ownership_percent", { ascending: false }),
-    supabase.from("company_management").select("*").in("company_id", ids).is("ended_on", null).order("retrieved_at", { ascending: false }),
-    supabase.from("company_scores").select("*").in("company_id", ids).order("calculated_at", { ascending: false }),
-    supabase.from("geocoding_results").select("*").in("company_id", ids).order("retrieved_at", { ascending: false }),
-    supabase.from("favorites").select("company_id").eq("workspace_id", workspaceId),
-    supabase.from("apollo_organizations").select("*").in("company_id", ids).order("retrieved_at", { ascending: false }),
+  const [
+    locations,
+    financials,
+    ownership,
+    owners,
+    management,
+    scores,
+    geocoding,
+    favorites,
+    apollo,
+  ] = await Promise.all([
+    supabase
+      .from("company_locations")
+      .select("*")
+      .in("company_id", ids)
+      .order("retrieved_at", { ascending: false }),
+    supabase
+      .from("company_financial_periods")
+      .select("*")
+      .in("company_id", ids)
+      .order("fiscal_period_end", { ascending: false }),
+    supabase
+      .from("company_ownership_classifications")
+      .select("*")
+      .in("company_id", ids)
+      .eq("is_current", true),
+    supabase
+      .from("company_owners")
+      .select("*")
+      .in("company_id", ids)
+      .order("ownership_percent", { ascending: false }),
+    supabase
+      .from("company_management")
+      .select("*")
+      .in("company_id", ids)
+      .is("ended_on", null)
+      .order("retrieved_at", { ascending: false }),
+    supabase
+      .from("company_scores")
+      .select("*")
+      .in("company_id", ids)
+      .order("calculated_at", { ascending: false }),
+    supabase
+      .from("geocoding_results")
+      .select("*")
+      .in("company_id", ids)
+      .order("retrieved_at", { ascending: false }),
+    supabase
+      .from("favorites")
+      .select("company_id")
+      .eq("workspace_id", workspaceId),
+    supabase
+      .from("apollo_organizations")
+      .select("*")
+      .in("company_id", ids)
+      .order("retrieved_at", { ascending: false }),
   ]);
 
   const firstByCompany = (rows: Row[] | null) => {
@@ -43,7 +99,9 @@ export async function listCompanies(workspaceId: string): Promise<Company[]> {
   const scoreByCompany = firstByCompany(scores.data as Row[] | null);
   const geoByCompany = firstByCompany(geocoding.data as Row[] | null);
   const apolloByCompany = firstByCompany(apollo.data as Row[] | null);
-  const favoriteIds = new Set((favorites.data ?? []).map((row) => row.company_id));
+  const favoriteIds = new Set(
+    (favorites.data ?? []).map((row) => row.company_id),
+  );
   const groupByCompany = (rows: Row[] | null) => {
     const map = new Map<string, Row[]>();
     for (const row of rows ?? []) {
@@ -64,6 +122,7 @@ export async function listCompanies(workspaceId: string): Promise<Company[]> {
     const geo = geoByCompany.get(id);
     const apolloOrganization = apolloByCompany.get(id);
     const payload = (row.raw_provider_payload ?? {}) as Row;
+    const register = (payload.register ?? {}) as Row;
     const industryCodes = payload.industry_codes;
     const wz2025 = asWzCodes(industryCodes);
     const industryCode = String(wz2025[0] ?? payload.industry_code ?? "N/A");
@@ -72,10 +131,24 @@ export async function listCompanies(workspaceId: string): Promise<Company[]> {
     const capital = payload.capital as Row | undefined;
     const geoPayload = (geo?.raw_payload ?? {}) as Row;
     const geoAddress = (geoPayload.address ?? {}) as Row;
-    const fiscalPeriod = financial?.fiscal_period_end ? new Date(String(financial.fiscal_period_end)).getUTCFullYear() : null;
+    const fiscalPeriod = financial?.fiscal_period_end
+      ? new Date(String(financial.fiscal_period_end)).getUTCFullYear()
+      : null;
     return {
       id,
       openregisterCompanyId: row.openregister_company_id,
+      registerReference: formatGermanRegisterReference({
+        registerType: String(
+          register.register_type ?? payload.register_type ?? "",
+        ),
+        registerNumber: String(
+          row.register_number ?? register.register_number ?? "",
+        ),
+        openregisterCompanyId: row.openregister_company_id,
+      }),
+      registerCourt: formatGermanRegisterCourt(
+        String(register.register_court ?? payload.register_court ?? ""),
+      ),
       name: row.legal_name,
       legalForm: row.legal_form ?? "N/A",
       address: String(location?.address_line ?? "N/A"),
@@ -83,21 +156,39 @@ export async function listCompanies(workspaceId: string): Promise<Company[]> {
       state: String(location?.bundesland ?? geoAddress.state ?? "N/A"),
       postcode: String(location?.postcode ?? "N/A"),
       industryCode,
-      industry: industryCode === "N/A" ? "N/A" : "WZ2025 classification",
+      industry:
+        industryCode === "N/A" ? "N/A" : getWz2025IndustryName(industryCode),
       website: row.website_url,
-      employees: financial?.employees == null ? null : Number(financial.employees),
+      employees:
+        financial?.employees == null ? null : Number(financial.employees),
       employeeYear: fiscalPeriod,
-      apolloEmployees: apolloOrganization?.estimated_employees == null ? null : Number(apolloOrganization.estimated_employees),
-      revenueCents: financial?.revenue_cents == null ? null : Number(financial.revenue_cents),
-      ebitdaCents: financial?.ebitda_cents == null ? null : Number(financial.ebitda_cents),
-      ebitCents: financial?.ebit_cents == null ? null : Number(financial.ebit_cents),
-      equityCents: financial?.equity_cents == null ? null : Number(financial.equity_cents),
-      debtCents: financial?.debt_cents == null ? null : Number(financial.debt_cents),
-      totalAssetsCents: financial?.total_assets_cents == null ? null : Number(financial.total_assets_cents),
+      apolloEmployees:
+        apolloOrganization?.estimated_employees == null
+          ? null
+          : Number(apolloOrganization.estimated_employees),
+      revenueCents:
+        financial?.revenue_cents == null
+          ? null
+          : Number(financial.revenue_cents),
+      ebitdaCents:
+        financial?.ebitda_cents == null ? null : Number(financial.ebitda_cents),
+      ebitCents:
+        financial?.ebit_cents == null ? null : Number(financial.ebit_cents),
+      equityCents:
+        financial?.equity_cents == null ? null : Number(financial.equity_cents),
+      debtCents:
+        financial?.debt_cents == null ? null : Number(financial.debt_cents),
+      totalAssetsCents:
+        financial?.total_assets_cents == null
+          ? null
+          : Number(financial.total_assets_cents),
       fiscalYear: fiscalPeriod,
-      ownership: String(classification?.classification ?? "Unknown") as OwnershipCategory,
+      ownership: String(
+        classification?.classification ?? "Unknown",
+      ) as OwnershipCategory,
       ownershipConfidence: Number(classification?.confidence ?? 0),
-      ownershipMethod: (classification?.classification_method ?? "manual") as Company["ownershipMethod"],
+      ownershipMethod: (classification?.classification_method ??
+        "manual") as Company["ownershipMethod"],
       ownerSummary: companyOwners.length
         ? companyOwners.map((owner) => String(owner.owner_name)).join(", ")
         : "N/A",
@@ -116,9 +207,15 @@ export async function listCompanies(workspaceId: string): Promise<Company[]> {
       purpose: String(row.purpose ?? "N/A"),
       incorporationDate: row.incorporation_date,
       capitalCents:
-        capital?.amount == null ? null : Math.round(Number(capital.amount) * 100),
+        capital?.amount == null
+          ? null
+          : Math.round(Number(capital.amount) * 100),
       status: row.status as PipelineStatus,
-      score: score?.insufficient_data ? null : score?.score == null ? null : Number(score.score),
+      score: score?.insufficient_data
+        ? null
+        : score?.score == null
+          ? null
+          : Number(score.score),
       favorite: favoriteIds.has(id),
       hydration: [row.hydration_stage],
       latitude: geo?.latitude == null ? null : Number(geo.latitude),

@@ -52,18 +52,15 @@ export class ApolloProvider {
         },
       });
     return fetchProvider(
-      "https://api.apollo.io/api/v1/organizations/enrich",
+      `https://api.apollo.io/api/v1/organizations/enrich?${new URLSearchParams({
+        domain: parsed.domain,
+        ...(parsed.name ? { name: parsed.name } : {}),
+        ...(parsed.linkedinUrl ? { linkedin_url: parsed.linkedinUrl } : {}),
+      })}`,
       {
-        method: "POST",
         headers: {
           "X-Api-Key": process.env.APOLLO_API_KEY ?? "",
-          "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          domain: parsed.domain,
-          organization_name: parsed.name,
-          organization_linkedin_url: parsed.linkedinUrl,
-        }),
       },
       ApolloOrganizationSchema,
     );

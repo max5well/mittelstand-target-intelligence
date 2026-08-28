@@ -38,7 +38,7 @@ const allStatuses: Array<PipelineStatus | "all"> = [
 
 const columnLabels: Record<string, string> = {
   city: "Location",
-  industry: "WZ2025 industry",
+  industry: "Industry",
   employees: "Employees",
   revenueCents: "Revenue",
   ebitdaCents: "EBITDA",
@@ -90,7 +90,10 @@ export function CompaniesTable({
         enableHiding: false,
         header: "",
         cell: ({ row }) => (
-          <span aria-label={row.original.favorite ? "Favorite" : "Not a favorite"} className="text-[#b48b24]">
+          <span
+            aria-label={row.original.favorite ? "Favorite" : "Not a favorite"}
+            className="text-[#b48b24]"
+          >
             <Star
               size={15}
               fill={row.original.favorite ? "currentColor" : "none"}
@@ -111,7 +114,8 @@ export function CompaniesTable({
               {row.original.name}
             </Link>
             <p className="mt-1 text-xs text-[#84908b]">
-              {row.original.openregisterCompanyId} · {row.original.legalForm}
+              {row.original.registerReference} · {row.original.registerCourt} ·{" "}
+              {row.original.legalForm}
             </p>
           </div>
         ),
@@ -122,21 +126,16 @@ export function CompaniesTable({
         cell: ({ row }) => (
           <div>
             <p>{row.original.city}</p>
-            <p className="mt-1 text-xs text-[#84908b]">
-              {row.original.state}
-            </p>
+            <p className="mt-1 text-xs text-[#84908b]">{row.original.state}</p>
           </div>
         ),
       },
       {
         accessorKey: "industry",
-        header: "WZ2025 industry",
+        header: "Industry",
         cell: ({ row }) => (
           <div className="min-w-[180px]">
             <p>{row.original.industry}</p>
-            <p className="mt-1 text-xs text-[#84908b]">
-              {row.original.industryCode}
-            </p>
           </div>
         ),
       },
@@ -197,8 +196,13 @@ export function CompaniesTable({
           <div className="min-w-[190px]">
             <p>{row.original.ownership}</p>
             <p className="mt-1 text-xs text-[#84908b]">
-              {Math.round(row.original.ownershipConfidence * 100)}% ·{" "}
-              {row.original.ownershipMethod.replaceAll("_", " ")}
+              {row.original.ownershipMethod === "rules"
+                ? "Rule-based classification"
+                : row.original.ownershipMethod === "openregister_flag"
+                  ? "OpenRegister classification"
+                  : row.original.ownershipMethod === "ai_with_evidence"
+                    ? "Evidence-based classification"
+                    : "Analyst classification"}
             </p>
           </div>
         ),
@@ -206,7 +210,11 @@ export function CompaniesTable({
       {
         accessorKey: "status",
         header: "Status",
-        cell: ({ row }) => <span className="rounded-full bg-[#e7eee9] px-2.5 py-1.5 text-xs font-semibold text-[#385f54]">{statusLabel(row.original.status)}</span>,
+        cell: ({ row }) => (
+          <span className="rounded-full bg-[#e7eee9] px-2.5 py-1.5 text-xs font-semibold text-[#385f54]">
+            {statusLabel(row.original.status)}
+          </span>
+        ),
       },
       {
         accessorKey: "score",
@@ -243,9 +251,7 @@ export function CompaniesTable({
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
 
   function exportCsv() {
-    const sortedCompanies = table
-      .getRowModel()
-      .rows.map((row) => row.original);
+    const sortedCompanies = table.getRowModel().rows.map((row) => row.original);
     const blob = new Blob(["\uFEFF", companiesToCsv(sortedCompanies)], {
       type: "text/csv;charset=utf-8",
     });

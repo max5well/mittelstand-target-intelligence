@@ -120,6 +120,8 @@ export const companies: Company[] = names.map((baseName, index) => {
   return {
     id: `company-${String(index + 1).padStart(3, "0")}`,
     openregisterCompanyId: `or_mock_${String(18001 + index)}`,
+    registerReference: `HRB${String(18001 + index)}`,
+    registerCourt: `Amtsgericht ${location[0]}`,
     name: `${baseName} ${index % 4 === 1 ? "AG" : "GmbH"}`,
     legalForm: index % 4 === 1 ? "AG" : "GmbH",
     address: `Industriestraße ${index + 1}`,
@@ -141,7 +143,8 @@ export const companies: Company[] = names.map((baseName, index) => {
     ebitCents: ebitdaCents === null ? null : Math.round(ebitdaCents * 0.82),
     equityCents: revenueCents === null ? null : Math.round(revenueCents * 0.34),
     debtCents: revenueCents === null ? null : Math.round(revenueCents * 0.18),
-    totalAssetsCents: revenueCents === null ? null : Math.round(revenueCents * 0.76),
+    totalAssetsCents:
+      revenueCents === null ? null : Math.round(revenueCents * 0.76),
     fiscalYear: revenueCents === null ? null : 2024 - (index % 3),
     ownership,
     ownershipConfidence: ownership.includes("PE-backed") ? 0.72 : 0.88,
@@ -155,11 +158,15 @@ export const companies: Company[] = names.map((baseName, index) => {
       : ownership.includes("PE-backed")
         ? "Industria Capital II via holding vehicle"
         : `${baseName.split(" ")[0]} Beteiligungs GmbH (100%)`,
-    owners: [{
-      name: ownership.includes("Family") ? "Schneider family" : `${baseName.split(" ")[0]} Beteiligungs GmbH`,
-      type: ownership.includes("Family") ? "natural_person" : "legal_person",
-      percentage: 100,
-    }],
+    owners: [
+      {
+        name: ownership.includes("Family")
+          ? "Schneider family"
+          : `${baseName.split(" ")[0]} Beteiligungs GmbH`,
+        type: ownership.includes("Family") ? "natural_person" : "legal_person",
+        percentage: 100,
+      },
+    ],
     management: [{ name: "Anna Beispiel", role: "DIRECTOR" }],
     purpose: `Manufacturing and distribution in ${industry[1].toLocaleLowerCase("de")}.`,
     incorporationDate: "1998-01-01",

@@ -2,6 +2,8 @@ import type { Company } from "@/lib/types";
 
 const headers = [
   "Company",
+  "Register reference",
+  "Register court",
   "OpenRegister ID",
   "Legal form",
   "City",
@@ -33,6 +35,8 @@ export function companiesToCsv(companies: Company[]): string {
   const lines = companies.map((company) =>
     [
       company.name,
+      company.registerReference,
+      company.registerCourt,
       company.openregisterCompanyId,
       company.legalForm,
       company.city,

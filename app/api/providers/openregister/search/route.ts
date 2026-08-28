@@ -20,16 +20,18 @@ export async function POST(request: Request) {
     const startedAt = Date.now();
     const input = CompanySearchRequestSchema.parse(await request.json());
     const result = await new OpenRegisterProvider().search(input);
-    await createAdminClient().from("provider_usage_events").insert({
-      workspace_id: authorization.workspaceId,
-      provider: "openregister",
-      endpoint: "POST /v1/search/company",
-      estimated_credits: 10,
-      actual_credits: 10,
-      request_count: 1,
-      http_status: 200,
-      duration_ms: Date.now() - startedAt,
-    });
+    await createAdminClient()
+      .from("provider_usage_events")
+      .insert({
+        workspace_id: authorization.workspaceId,
+        provider: "openregister",
+        endpoint: "POST /v1/search/company",
+        estimated_credits: 10,
+        actual_credits: 10,
+        request_count: 1,
+        http_status: 200,
+        duration_ms: Date.now() - startedAt,
+      });
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof z.ZodError)
@@ -41,7 +43,12 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     return NextResponse.json(
-      { error: "Provider request failed" },
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "OpenRegister preview request failed",
+      },
       { status: 502 },
     );
   }

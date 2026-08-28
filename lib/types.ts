@@ -31,6 +31,8 @@ export type OwnershipCategory =
 export type Company = {
   id: string;
   openregisterCompanyId: string;
+  registerReference: string;
+  registerCourt: string;
   name: string;
   legalForm: string;
   address: string;
