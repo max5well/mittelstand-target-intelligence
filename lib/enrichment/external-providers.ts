@@ -245,7 +245,12 @@ async function runWebsiteDiscovery(input: {
       "This target has no OpenRegister company ID to verify against",
     );
   if (company.website_url && !input.force)
-    return { skipped: true, available: true, returned: 1 };
+    return {
+      skipped: true,
+      available: true,
+      returned: 1,
+      website: company.website_url,
+    };
 
   const { data: location } = await supabase
     .from("company_locations")

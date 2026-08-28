@@ -1,14 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  AlertCircle,
   CheckCircle2,
   FileSearch,
   FileText,
   Globe2,
   RefreshCw,
   Users,
+  X,
 } from "lucide-react";
 
 type Stage =
@@ -24,6 +26,10 @@ type PreviousRun = {
   provider: string;
   completedAt: string | null;
   available: boolean;
+};
+type WebsiteToast = {
+  kind: "success" | "not-found";
+  message: string;
 };
 
 const actions: Array<{
@@ -111,6 +117,12 @@ export function CompanyActions({
   const router = useRouter();
   const [busy, setBusy] = useState<Stage | "all" | null>(null);
   const [message, setMessage] = useState("");
+  const [websiteToast, setWebsiteToast] = useState<WebsiteToast | null>(null);
+  useEffect(() => {
+    if (!websiteToast) return;
+    const timeout = window.setTimeout(() => setWebsiteToast(null), 6000);
+    return () => window.clearTimeout(timeout);
+  }, [websiteToast]);
   const latest = new Map(
     previousRuns.map((run) => [`${run.provider}:${run.stage}`, run]),
   );
@@ -132,6 +144,7 @@ export function CompanyActions({
       error?: string;
       skipped?: boolean;
       available?: boolean;
+      website?: string | null;
     };
     if (!response.ok)
       throw new Error(result.error ?? `${stage} ist fehlgeschlagen`);
@@ -141,14 +154,24 @@ export function CompanyActions({
   async function runOne(stage: Stage) {
     setBusy(stage);
     setMessage("");
+    if (stage === "website_discovery") setWebsiteToast(null);
     try {
       const action = actions.find((candidate) => candidate.stage === stage);
       const key = `${action?.provider ?? "openregister"}:${stage}`;
       const result = await run(stage, latest.has(key));
+      if (stage === "website_discovery") {
+        const found = result.available !== false;
+        setWebsiteToast({
+          kind: found ? "success" : "not-found",
+          message: found ? "Website successfully added" : "Website not found",
+        });
+      }
       setMessage(
-        result.available === false
-          ? `${action?.label ?? stage} abgeschlossen, aber der Anbieter hat keine passenden Daten geliefert.`
-          : `${action?.label ?? stage} abgeschlossen. Die Ergebnisse wurden unten gespeichert.`,
+        stage === "website_discovery"
+          ? ""
+          : result.available === false
+            ? `${action?.label ?? stage} abgeschlossen, aber der Anbieter hat keine passenden Daten geliefert.`
+            : `${action?.label ?? stage} abgeschlossen. Die Ergebnisse wurden unten gespeichert.`,
       );
       router.refresh();
     } catch (error) {
@@ -188,6 +211,41 @@ export function CompanyActions({
 
   return (
     <div className="mt-4 space-y-2">
+      {websiteToast ? (
+        <div
+          role={websiteToast.kind === "success" ? "status" : "alert"}
+          aria-live={websiteToast.kind === "success" ? "polite" : "assertive"}
+          className={`fixed right-5 top-5 z-50 flex w-[min(400px,calc(100vw-2.5rem))] items-start gap-3 rounded-xl border p-4 shadow-[0_18px_48px_rgba(20,38,32,0.18)] ${
+            websiteToast.kind === "success"
+              ? "border-[#8fcab8] bg-[#eaf7f2] text-[#155f4e]"
+              : "border-[#e3b49e] bg-[#fff1eb] text-[#8a3f26]"
+          }`}
+        >
+          {websiteToast.kind === "success" ? (
+            <CheckCircle2 className="mt-0.5 shrink-0" size={21} />
+          ) : (
+            <AlertCircle className="mt-0.5 shrink-0" size={21} />
+          )}
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold">
+              {websiteToast.message}
+            </span>
+            <span className="mt-1 block text-xs leading-5 opacity-80">
+              {websiteToast.kind === "success"
+                ? "The verified website is now visible in the company profile and Apollo is available."
+                : "No sufficiently verified company website could be identified."}
+            </span>
+          </span>
+          <button
+            type="button"
+            aria-label="Close notification"
+            onClick={() => setWebsiteToast(null)}
+            className="grid size-7 shrink-0 place-items-center rounded-md transition hover:bg-black/5"
+          >
+            <X size={15} />
+          </button>
+        </div>
+      ) : null}
       {visibleActions.map(
         ({ stage, provider, label, description, icon: Icon, credits }) => {
           const previous = latest.get(`${provider}:${stage}`);

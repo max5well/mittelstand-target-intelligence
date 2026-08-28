@@ -38,7 +38,7 @@ export default async function JobsPage() {
     <div className="mx-auto max-w-[1500px] p-5 md:p-9">
       <PageHeader
         eyebrow="Betrieb"
-        title="Aufträge & Nutzung"
+        title="Log"
         description="Alle Anbieterläufe, Wiederholungen, Credits und Fehler in einer nachvollziehbaren Historie."
       />
       {!jobs.length ? (

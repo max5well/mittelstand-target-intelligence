@@ -20,7 +20,7 @@ const navigation = [
   { label: "Karte", href: "/map", icon: Map },
   { label: "Analysen", href: "/analytics", icon: Globe2 },
   { label: "Gespeicherte Suchen", href: "/searches", icon: SlidersHorizontal },
-  { label: "Aufträge & Nutzung", href: "/jobs", icon: DatabaseZap },
+  { label: "Log", href: "/jobs", icon: DatabaseZap },
 ];
 
 export function AppShell({

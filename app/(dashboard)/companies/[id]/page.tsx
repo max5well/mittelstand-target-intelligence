@@ -1,7 +1,9 @@
 import {
   ArrowLeft,
   Building2,
+  CheckCircle2,
   ExternalLink,
+  Globe2,
   History,
   ShieldCheck,
 } from "lucide-react";
@@ -98,20 +100,31 @@ export default async function CompanyDetailPage({
                 .filter((value) => value !== "N/A")
                 .join(", ") || "Standort N/V"}
             </span>
-            {company.website && (
-              <a
-                href={company.website}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 text-[#087b62]"
-              >
-                Website <ExternalLink size={12} />
-              </a>
-            )}
             <span className="rounded-full bg-[#e6eee9] px-2.5 py-1 font-semibold text-[#41665c]">
               {statusLabel(company.status)}
             </span>
           </div>
+          {company.website ? (
+            <a
+              href={company.website}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-4 flex w-fit max-w-full items-center gap-3 rounded-xl border border-[#9bcfbe] bg-[#eaf6f1] px-4 py-3 text-[#155f4e] shadow-sm transition hover:border-[#5eaf95] hover:bg-[#e0f2eb]"
+            >
+              <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[#cce9de]">
+                <Globe2 size={18} />
+              </span>
+              <span className="min-w-0">
+                <span className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-[.09em]">
+                  <CheckCircle2 size={13} /> Verifizierte Website
+                </span>
+                <span className="mt-0.5 block truncate text-sm font-semibold text-[#123f35]">
+                  {displayWebsiteHost(company.website)}
+                </span>
+              </span>
+              <ExternalLink className="ml-1 shrink-0" size={15} />
+            </a>
+          ) : null}
         </div>
       </header>
 
@@ -375,7 +388,7 @@ export default async function CompanyDetailPage({
             <p className="mt-2 text-sm leading-6 text-[#68736e]">
               Abgeschlossene Läufe aktualisieren die normalisierten
               Unternehmensdaten und bewahren Rohdatenbelege auf. Die
-              vollständige Historie finden Sie unter „Aufträge & Nutzung“.
+              vollständige Historie finden Sie unter „Log“.
             </p>
             {jobs.length ? (
               <div className="mt-5 divide-y divide-[#e3e0d8]">
@@ -409,6 +422,14 @@ export default async function CompanyDetailPage({
       </div>
     </div>
   );
+}
+
+function displayWebsiteHost(value: string) {
+  try {
+    return new URL(value).hostname.replace(/^www\./, "");
+  } catch {
+    return value;
+  }
 }
 
 function Field({ label, value }: { label: string; value: string }) {
