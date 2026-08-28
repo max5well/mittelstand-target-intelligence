@@ -1,6 +1,7 @@
 import { ArrowLeft, Building2, ExternalLink, History, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { CompanyActions } from "@/components/company-actions";
 import { requireUser } from "@/lib/auth/user";
 import { getCompanyById } from "@/lib/data/companies";
 import { listJobs } from "@/lib/data/jobs";
@@ -14,6 +15,21 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
   const jobs = await listJobs(user.workspaceId, company.id);
   const readyProviders = getIntegrationStatuses().filter((provider) => provider.usable);
   const margin = company.revenueCents && company.ebitdaCents ? company.ebitdaCents / company.revenueCents : null;
+  const previousRuns = Array.from(
+    jobs.reduce((latest, job) => {
+      if (
+        ["details", "financials", "owners"].includes(job.type) &&
+        job.status === "succeeded" &&
+        !latest.has(job.type)
+      )
+        latest.set(job.type, {
+          stage: job.type as "details" | "financials" | "owners",
+          completedAt: job.completedAt,
+          available: job.available !== false,
+        });
+      return latest;
+    }, new Map<string, { stage: "details" | "financials" | "owners"; completedAt: string | null; available: boolean }>()),
+  ).map(([, run]) => run);
 
   return (
     <div className="mx-auto max-w-[1400px] p-5 md:p-9">
@@ -24,7 +40,7 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
           <p className="text-xs font-semibold uppercase tracking-[.1em] text-[#16856b]">{company.openregisterCompanyId}</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-[-.035em]">{company.name}</h1>
           <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-[#69736f]">
-            <span>{company.postcode} {company.city}, {company.state}</span>
+            <span>{[company.address, company.postcode, company.city, company.state].filter((value) => value !== "N/A").join(", ") || "Location N/A"}</span>
             {company.website && <a href={company.website} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[#087b62]">Website <ExternalLink size={12} /></a>}
             <span className="rounded-full bg-[#e6eee9] px-2.5 py-1 font-semibold text-[#41665c]">{statusLabel(company.status)}</span>
           </div>
@@ -51,11 +67,35 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
           <dl className="mt-5 grid gap-x-8 gap-y-5 sm:grid-cols-2">
             <Field label="Legal form" value={company.legalForm} />
             <Field label="WZ2025 industry" value={`${company.industryCode} · ${company.industry}`} />
+            <Field label="Incorporated" value={company.incorporationDate ? new Intl.DateTimeFormat("en-GB", { dateStyle: "medium" }).format(new Date(company.incorporationDate)) : "N/A"} />
+            <Field label="Registered capital" value={formatMoney(company.capitalCents)} />
             <Field label="Ownership" value={company.ownership} />
             <Field label="Ownership method" value={company.ownershipMethod.replaceAll("_", " ")} />
             <Field label="Profile updated" value={new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "Europe/Berlin" }).format(new Date(company.updatedAt))} />
             <Field label="Data classification" value={company.sourceType === "reported" ? "Reported source data" : "Estimate"} />
           </dl>
+          <div className="mt-7 border-t border-[#e1ded6] pt-6">
+            <h3 className="text-sm font-semibold">Business purpose</h3>
+            <p className="mt-2 max-w-4xl text-sm leading-7 text-[#4f5d58]">{company.purpose}</p>
+          </div>
+          <div className="mt-7 grid gap-6 border-t border-[#e1ded6] pt-6 md:grid-cols-2">
+            <ProfileList
+              title="Management"
+              empty="N/A"
+              rows={company.management.map((person) => `${person.name} · ${person.role}`)}
+            />
+            <ProfileList
+              title="Owners"
+              empty="N/A"
+              rows={company.owners.map((owner) => `${owner.name}${owner.percentage === null ? "" : ` · ${owner.percentage}%`}`)}
+            />
+          </div>
+          <div className="mt-7 grid gap-4 border-t border-[#e1ded6] pt-6 sm:grid-cols-2 xl:grid-cols-4">
+            <FinancialField label="EBIT" value={company.ebitCents} />
+            <FinancialField label="Equity" value={company.equityCents} />
+            <FinancialField label="Financial debt" value={company.debtCents} />
+            <FinancialField label="Balance sheet total" value={company.totalAssetsCents} />
+          </div>
         </section>
 
         <aside className="space-y-5">
@@ -64,7 +104,10 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
             {readyProviders.length === 0 ? (
               <><p className="mt-3 text-sm leading-6 text-[#68736e]">No provider action is shown because no source is fully configured and verified for this deployment.</p><Link href="/settings?section=integrations" className="mt-4 inline-flex text-sm font-semibold text-[#087b62]">Review integrations →</Link></>
             ) : (
-              <p className="mt-3 text-sm leading-6 text-[#68736e]">Provider connections are ready. Actions will appear here only after their persistence flow passes the live verification run.</p>
+              <>
+                <p className="mt-3 text-sm leading-6 text-[#68736e]">Each action writes normalized fields, raw source evidence, credits, and its completion time. Previous runs stay visible before you spend credits again.</p>
+                <CompanyActions companyId={company.id} previousRuns={previousRuns} />
+              </>
             )}
           </section>
 
@@ -81,4 +124,12 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
 
 function Field({ label, value }: { label: string; value: string }) {
   return <div><dt className="text-xs font-semibold uppercase tracking-[.08em] text-[#75807c]">{label}</dt><dd className="mt-2 text-sm leading-6 text-[#28332f]">{value}</dd></div>;
+}
+
+function ProfileList({ title, rows, empty }: { title: string; rows: string[]; empty: string }) {
+  return <div><h3 className="text-sm font-semibold">{title}</h3>{rows.length ? <ul className="mt-2 space-y-2 text-sm leading-6 text-[#4f5d58]">{rows.map((row) => <li key={row}>{row}</li>)}</ul> : <p className="mt-2 text-sm text-[#7a8580]">{empty}</p>}</div>;
+}
+
+function FinancialField({ label, value }: { label: string; value: number | null }) {
+  return <div className="rounded-lg bg-[#f0eee9] p-3"><p className="text-xs text-[#75807c]">{label}</p><p className="mt-1 text-sm font-semibold tabular-nums">{formatMoney(value)}</p></div>;
 }

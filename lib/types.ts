@@ -33,6 +33,7 @@ export type Company = {
   openregisterCompanyId: string;
   name: string;
   legalForm: string;
+  address: string;
   city: string;
   state: string;
   postcode: string;
@@ -44,6 +45,10 @@ export type Company = {
   apolloEmployees: number | null;
   revenueCents: number | null;
   ebitdaCents: number | null;
+  ebitCents: number | null;
+  equityCents: number | null;
+  debtCents: number | null;
+  totalAssetsCents: number | null;
   fiscalYear: number | null;
   ownership: OwnershipCategory;
   ownershipConfidence: number;
@@ -53,6 +58,11 @@ export type Company = {
     | "ai_with_evidence"
     | "manual";
   ownerSummary: string;
+  owners: Array<{ name: string; type: string; percentage: number | null }>;
+  management: Array<{ name: string; role: string }>;
+  purpose: string;
+  incorporationDate: string | null;
+  capitalCents: number | null;
   status: PipelineStatus;
   score: number | null;
   favorite: boolean;

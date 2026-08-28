@@ -122,6 +122,7 @@ export const companies: Company[] = names.map((baseName, index) => {
     openregisterCompanyId: `or_mock_${String(18001 + index)}`,
     name: `${baseName} ${index % 4 === 1 ? "AG" : "GmbH"}`,
     legalForm: index % 4 === 1 ? "AG" : "GmbH",
+    address: `Industriestraße ${index + 1}`,
     city: location[0],
     state: location[1],
     postcode: location[2],
@@ -137,6 +138,10 @@ export const companies: Company[] = names.map((baseName, index) => {
       employees === null ? 73 + index : employees + (index % 2 === 0 ? 14 : -9),
     revenueCents,
     ebitdaCents,
+    ebitCents: ebitdaCents === null ? null : Math.round(ebitdaCents * 0.82),
+    equityCents: revenueCents === null ? null : Math.round(revenueCents * 0.34),
+    debtCents: revenueCents === null ? null : Math.round(revenueCents * 0.18),
+    totalAssetsCents: revenueCents === null ? null : Math.round(revenueCents * 0.76),
     fiscalYear: revenueCents === null ? null : 2024 - (index % 3),
     ownership,
     ownershipConfidence: ownership.includes("PE-backed") ? 0.72 : 0.88,
@@ -150,6 +155,15 @@ export const companies: Company[] = names.map((baseName, index) => {
       : ownership.includes("PE-backed")
         ? "Industria Capital II via holding vehicle"
         : `${baseName.split(" ")[0]} Beteiligungs GmbH (100%)`,
+    owners: [{
+      name: ownership.includes("Family") ? "Schneider family" : `${baseName.split(" ")[0]} Beteiligungs GmbH`,
+      type: ownership.includes("Family") ? "natural_person" : "legal_person",
+      percentage: 100,
+    }],
+    management: [{ name: "Anna Beispiel", role: "DIRECTOR" }],
+    purpose: `Manufacturing and distribution in ${industry[1].toLocaleLowerCase("de")}.`,
+    incorporationDate: "1998-01-01",
+    capitalCents: 2_500_000,
     status: statuses[index % statuses.length],
     score:
       missingFinancials && index % 2 === 0 ? null : 58 + ((index * 7) % 38),

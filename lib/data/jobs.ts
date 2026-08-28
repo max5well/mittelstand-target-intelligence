@@ -13,6 +13,7 @@ export type StoredJob = {
   createdAt: string;
   completedAt: string | null;
   error: string | null;
+  available: boolean | null;
 };
 
 export async function listJobs(workspaceId: string, companyId?: string): Promise<StoredJob[]> {
@@ -20,7 +21,7 @@ export async function listJobs(workspaceId: string, companyId?: string): Promise
   const supabase = createAdminClient();
   let query = supabase
     .from("enrichment_jobs")
-    .select("id,company_id,provider,job_type,status,estimated_credits,actual_credits,created_at,completed_at,error_details,companies(legal_name)")
+    .select("id,company_id,provider,job_type,status,estimated_credits,actual_credits,created_at,completed_at,error_details,payload,companies(legal_name)")
     .eq("workspace_id", workspaceId)
     .order("created_at", { ascending: false })
     .limit(companyId ? 20 : 100);
@@ -30,6 +31,7 @@ export async function listJobs(workspaceId: string, companyId?: string): Promise
   return (data ?? []).map((row) => {
     const companyRelation = row.companies as unknown as { legal_name?: string } | null;
     const errorDetails = row.error_details as { message?: string } | null;
+    const payload = row.payload as { available?: boolean } | null;
     return {
       id: row.id,
       companyId: row.company_id,
@@ -41,6 +43,7 @@ export async function listJobs(workspaceId: string, companyId?: string): Promise
       createdAt: row.created_at,
       completedAt: row.completed_at,
       error: errorDetails?.message ?? null,
+      available: typeof payload?.available === "boolean" ? payload.available : null,
     };
   });
 }

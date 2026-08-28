@@ -53,7 +53,7 @@ export async function POST(request: Request) {
         monthly_credit_estimate: monthlyCreditEstimate,
         created_by: null,
       })
-      .select("id,workspace_id,filters,daily_target")
+      .select("id,workspace_id,filters,daily_target,hydration_mode,hydration_stages")
       .single();
     if (error || !search)
       return NextResponse.json(

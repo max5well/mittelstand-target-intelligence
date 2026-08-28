@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import {
   Calculator,
   CalendarClock,
-  ChevronDown,
   CirclePause,
   Play,
   Plus,
@@ -14,18 +13,19 @@ import {
 } from "lucide-react";
 
 const providerCosts = { search: 10, details: 10, financials: 10, owners: 10 };
-const industryOptions = [
-  ["28", "Machinery & equipment"],
-  ["26", "Electronics & optical products"],
-  ["27", "Electrical equipment"],
-  ["22", "Rubber & plastic products"],
-  ["32.5", "Medical and dental instruments"],
-] as const;
+const wzCodePattern = /^\d{2}(?:\.\d{1,4})?$/;
 
 type SearchApiResponse = {
   error?: string;
   pagination?: { total_results?: number; total?: number };
-  run?: { accepted: number; duplicates: number } | null;
+  run?: {
+    accepted: number;
+    duplicates: number;
+    enrichmentCalls: number;
+    unavailable: number;
+    enrichmentErrors: number;
+    creditsUsed: number;
+  } | null;
 };
 
 export function SearchBuilder() {
@@ -34,10 +34,10 @@ export function SearchBuilder() {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const [dailyTarget, setDailyTarget] = useState(40);
-  const [mode, setMode] = useState<"lean" | "full" | "custom">("lean");
-  const [industryOpen, setIndustryOpen] = useState(false);
+  const [dailyTarget, setDailyTarget] = useState(10);
+  const [mode, setMode] = useState<"lean" | "full">("full");
   const [selectedIndustries, setSelectedIndustries] = useState<string[]>([]);
+  const [industryDraft, setIndustryDraft] = useState("");
   const [advancedFinancials, setAdvancedFinancials] = useState(false);
   const dailyCost = useMemo(
     () =>
@@ -61,29 +61,35 @@ export function SearchBuilder() {
       max?: string;
       values?: string[];
     }> = [
-      { field: "status", value: String(data.get("status") ?? "active") },
       { field: "legal_form", value: String(data.get("legal_form") ?? "gmbh") },
     ];
+    const status = String(data.get("status") ?? "active");
+    if (status !== "all") filters.unshift({ field: "status", value: status });
     if (selectedIndustries.length)
       filters.push({ field: "industry_codes", values: selectedIndustries });
 
     const ranges = [
-      ["employees", false],
-      ["revenue", true],
-      ["ebitda", true],
-      ["incorporation_date", false],
-      ["ebit", true],
-      ["equity", true],
-      ["financial_debt", true],
-      ["balance_sheet_total", true],
+      ["employees", "plain"],
+      ["revenue", "money"],
+      ["ebitda", "money"],
+      ["incorporated_at", "date"],
+      ["ebit", "money"],
+      ["equity", "money"],
+      ["financial_debt", "money"],
+      ["balance_sheet_total", "money"],
     ] as const;
-    for (const [field, convertEurosToCents] of ranges) {
+    for (const [field, conversion] of ranges) {
       const rawMin = String(data.get(`${field}_min`) ?? "").trim();
       const rawMax = String(data.get(`${field}_max`) ?? "").trim();
-      const convert = (value: string) =>
-        convertEurosToCents && value
-          ? String(Math.round(Number(value) * 100))
-          : value;
+      const convert = (value: string) => {
+        if (conversion === "money" && value)
+          return String(Math.round(Number(value) * 100));
+        if (conversion === "date" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+          const [year, month, day] = value.split("-");
+          return `${day}-${month}-${year}`;
+        }
+        return value;
+      };
       if (rawMin || rawMax)
         filters.push({
           field,
@@ -153,7 +159,7 @@ export function SearchBuilder() {
       if (!response.ok) throw new Error(result.error ?? "Unable to save search");
       setMessage(
         result.run
-          ? `Run complete: ${result.run.accepted} new, ${result.run.duplicates} already in the workspace.`
+          ? `Run complete: ${result.run.accepted} new, ${result.run.duplicates} already present; ${result.run.enrichmentCalls} enrichment calls recorded (${result.run.creditsUsed} credits).`
           : "Search saved as a draft.",
       );
       setOpen(false);
@@ -163,6 +169,21 @@ export function SearchBuilder() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function addIndustryCodes() {
+    const candidates = industryDraft
+      .split(/[\s,;]+/)
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const invalid = candidates.filter((code) => !wzCodePattern.test(code));
+    if (invalid.length) {
+      setMessage(`Use exact WZ2025 codes such as 56.11 or 71.12. Invalid: ${invalid.join(", ")}`);
+      return;
+    }
+    setSelectedIndustries((current) => Array.from(new Set([...current, ...candidates])));
+    setIndustryDraft("");
+    setMessage("");
   }
   return (
     <div className="flex flex-col items-start gap-2 md:items-end">
@@ -215,7 +236,7 @@ export function SearchBuilder() {
                   <Field label="Status">
                     <select name="status" defaultValue="active">
                       <option value="active">Active companies only</option>
-                      <option>Active and inactive</option>
+                      <option value="all">Active and inactive</option>
                     </select>
                   </Field>
                   <Field label="Legal forms">
@@ -226,57 +247,46 @@ export function SearchBuilder() {
                     </select>
                   </Field>
                   <Field label="WZ2025 industries">
-                    <div className="relative">
-                      <button
-                        type="button"
-                        onClick={() => setIndustryOpen((value) => !value)}
-                        aria-expanded={industryOpen}
-                        className="form-control flex items-center justify-between text-left"
-                      >
-                        <span className="truncate">
-                          {selectedIndustries.length
-                            ? industryOptions
-                                .filter(([code]) =>
-                                  selectedIndustries.includes(code),
-                                )
-                                .map(([code, label]) => `${code} · ${label}`)
-                                .join(", ")
-                            : "Select WZ2025 industries"}
-                        </span>
-                        <ChevronDown
-                          size={13}
-                          className={`shrink-0 transition ${industryOpen ? "rotate-180" : ""}`}
+                    <div>
+                      <div className="flex gap-2">
+                        <input
+                          value={industryDraft}
+                          onChange={(event) => setIndustryDraft(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              addIndustryCodes();
+                            }
+                          }}
+                          placeholder="e.g. 56.11, 71.12"
+                          aria-label="Exact WZ2025 industry codes"
                         />
-                      </button>
-                      {industryOpen && (
-                        <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-30 rounded-lg border border-[#d8d5cd] bg-white p-2 shadow-xl">
-                          {industryOptions.map(([code, label]) => (
-                            <label
+                        <button
+                          type="button"
+                          onClick={addIndustryCodes}
+                          className="rounded-lg border border-[#cfcac0] bg-white px-3 text-xs font-semibold normal-case tracking-normal"
+                        >
+                          Add
+                        </button>
+                      </div>
+                      {selectedIndustries.length ? (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {selectedIndustries.map((code) => (
+                            <button
+                              type="button"
                               key={code}
-                              className="flex items-center gap-2 rounded px-2 py-2 text-xs normal-case tracking-normal hover:bg-[#f3f2ed]"
+                              onClick={() => setSelectedIndustries((current) => current.filter((item) => item !== code))}
+                              className="rounded-full bg-[#e2efe9] px-2.5 py-1 font-mono text-xs font-medium normal-case tracking-normal text-[#216b59]"
+                              aria-label={`Remove WZ2025 ${code}`}
                             >
-                              <input
-                                type="checkbox"
-                                checked={selectedIndustries.includes(code)}
-                                onChange={() =>
-                                  setSelectedIndustries((current) =>
-                                    current.includes(code)
-                                      ? current.filter((item) => item !== code)
-                                      : [...current, code],
-                                  )
-                                }
-                              />
-                              <span className="font-mono text-xs text-[#16856b]">
-                                {code}
-                              </span>
-                              <span>{label}</span>
-                            </label>
+                              {code} ×
+                            </button>
                           ))}
-                          <p className="border-t border-[#ece9e2] px-2 pt-2 text-xs normal-case tracking-normal text-[#7a8580]">
-                            OpenRegister field: industry_codes · WZ2025
-                          </p>
                         </div>
-                      )}
+                      ) : null}
+                      <p className="mt-2 text-xs font-normal normal-case leading-5 tracking-normal text-[#7a8580]">
+                        Enter one or more exact WZ2025 codes. Leave empty to search all industries.
+                      </p>
                     </div>
                   </Field>
                   <Field label="Location">
@@ -290,7 +300,7 @@ export function SearchBuilder() {
                   <Range field="revenue" label="Revenue · EUR" min="" max="" />
                   <Range field="ebitda" label="EBITDA · EUR" min="" max="" />
                   <Range
-                    field="incorporation_date"
+                    field="incorporated_at"
                     label="Incorporated"
                     min=""
                     max=""
@@ -383,7 +393,6 @@ export function SearchBuilder() {
                       <option value="full">
                         Full · details, financials, owners
                       </option>
-                      <option value="custom">Custom stages</option>
                     </select>
                   </Field>
                   <Field label="Schedule">
@@ -443,6 +452,11 @@ export function SearchBuilder() {
                 </p>
               </div>
             </div>
+            {message ? (
+              <p role="status" className="mx-6 mb-3 rounded-lg bg-[#edf4f1] px-3 py-2 text-xs leading-5 text-[#42645b]">
+                {message}
+              </p>
+            ) : null}
             <div className="sticky bottom-0 flex flex-wrap justify-between gap-3 border-t border-[#d9d6ce] bg-[#f8f7f3]/95 px-6 py-4 backdrop-blur">
               <button type="button" disabled={busy} onClick={previewCount} className="flex h-10 items-center gap-2 rounded-lg border border-[#d6d3cb] bg-white px-4 text-xs font-semibold disabled:opacity-50">
                 <Search size={14} /> Preview count · 10 credits

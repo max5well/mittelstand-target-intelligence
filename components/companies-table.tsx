@@ -174,19 +174,21 @@ export function CompaniesTable({
       {
         accessorKey: "ebitdaCents",
         header: "EBITDA",
-        cell: ({ row }) => (
-          <div className="text-right tabular-nums">
-            <p>{formatMoney(row.original.ebitdaCents)}</p>
-            <p className="mt-1 text-xs text-[#84908b]">
-              {formatPercent(
-                row.original.ebitdaCents && row.original.revenueCents
-                  ? row.original.ebitdaCents / row.original.revenueCents
-                  : null,
-              )}{" "}
-              margin
-            </p>
-          </div>
-        ),
+        cell: ({ row }) => {
+          const margin = formatPercent(
+            row.original.ebitdaCents && row.original.revenueCents
+              ? row.original.ebitdaCents / row.original.revenueCents
+              : null,
+          );
+          return (
+            <div className="text-right tabular-nums">
+              <p>{formatMoney(row.original.ebitdaCents)}</p>
+              <p className="mt-1 text-xs text-[#84908b]">
+                {margin === "N/A" ? "N/A" : `${margin} margin`}
+              </p>
+            </div>
+          );
+        },
       },
       {
         accessorKey: "ownership",
