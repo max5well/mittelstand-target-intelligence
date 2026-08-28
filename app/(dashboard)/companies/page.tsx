@@ -10,7 +10,7 @@ export default async function CompaniesPage() {
   const user = await requireUser();
   const backendConfigured = hasLiveDataBackend();
   const companies = backendConfigured
-    ? await listCompanies(user.workspaceId)
+    ? await listCompanies(user.workspaceId, user.id)
     : [];
   return (
     <div className="mx-auto max-w-[1700px] p-5 md:p-9">

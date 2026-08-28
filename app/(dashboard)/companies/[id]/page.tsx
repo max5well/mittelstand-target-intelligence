@@ -28,7 +28,7 @@ export default async function CompanyDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const [{ id }, user] = await Promise.all([params, requireUser()]);
-  const company = await getCompanyById(user.workspaceId, id);
+  const company = await getCompanyById(user.workspaceId, user.id, id);
   if (!company) notFound();
   const [jobs, enrichment] = await Promise.all([
     listJobs(user.workspaceId, company.id),

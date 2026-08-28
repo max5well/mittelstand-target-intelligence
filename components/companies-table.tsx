@@ -16,11 +16,17 @@ import {
   ChevronRight,
   Columns3,
   Download,
+  RotateCcw,
   Search,
+  SlidersHorizontal,
   Star,
 } from "lucide-react";
 import Link from "next/link";
-import type { Company, PipelineStatus } from "@/lib/types";
+import {
+  pipelineStatuses,
+  type Company,
+  type PipelineStatus,
+} from "@/lib/types";
 import {
   formatMoney,
   formatPercent,
@@ -28,18 +34,9 @@ import {
   statusLabel,
 } from "@/lib/format";
 import { companiesToCsv } from "@/lib/company-csv";
+import { filterCompanies } from "@/lib/company-filters";
 
-const allStatuses: Array<PipelineStatus | "all"> = [
-  "all",
-  "new",
-  "reviewed",
-  "shortlisted",
-  "contacted",
-  "in_conversation",
-  "nda",
-  "diligence",
-  "passed",
-];
+const allStatuses: Array<PipelineStatus | "all"> = ["all", ...pipelineStatuses];
 
 const columnLabels: Record<string, string> = {
   city: "Standort",
@@ -67,6 +64,12 @@ export function CompaniesTable({
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<PipelineStatus | "all">("all");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [stateFilter, setStateFilter] = useState("all");
+  const [cityFilter, setCityFilter] = useState("all");
+  const [industryFilter, setIndustryFilter] = useState("all");
+  const [ownershipFilter, setOwnershipFilter] = useState<
+    Company["ownership"] | "all"
+  >("all");
   const [sorting, setSorting] = useState<SortingState>([
     { id: "score", desc: true },
   ]);
@@ -122,25 +125,64 @@ export function CompaniesTable({
     [workspaceId],
   );
 
+  const stateOptions = useMemo(
+    () => uniqueOptions(companies.map((company) => company.state)),
+    [companies],
+  );
+  const cityOptions = useMemo(
+    () => uniqueOptions(companies.map((company) => company.city)),
+    [companies],
+  );
+  const industryOptions = useMemo(
+    () => uniqueOptions(companies.map((company) => company.industry)),
+    [companies],
+  );
+  const ownershipOptions = useMemo(
+    () =>
+      Array.from(new Set(companies.map((company) => company.ownership))).sort(
+        (left, right) =>
+          ownershipLabel(left).localeCompare(ownershipLabel(right), "de"),
+      ),
+    [companies],
+  );
   const filtered = useMemo(
     () =>
-      companies.filter((company) => {
-        const term = query.toLocaleLowerCase("de");
-        const matchesQuery = [
-          company.name,
-          company.city,
-          company.industry,
-          company.openregisterCompanyId,
-          company.ownerSummary,
-        ].some((value) => value.toLocaleLowerCase("de").includes(term));
-        return (
-          matchesQuery &&
-          (status === "all" || company.status === status) &&
-          (!favoritesOnly || company.favorite)
-        );
+      filterCompanies(companies, {
+        query,
+        status,
+        favoritesOnly,
+        state: stateFilter,
+        city: cityFilter,
+        industry: industryFilter,
+        ownership: ownershipFilter,
       }),
-    [companies, query, status, favoritesOnly],
+    [
+      cityFilter,
+      companies,
+      favoritesOnly,
+      industryFilter,
+      ownershipFilter,
+      query,
+      stateFilter,
+      status,
+    ],
   );
+  const activeFilterCount = [
+    status !== "all",
+    stateFilter !== "all",
+    cityFilter !== "all",
+    industryFilter !== "all",
+    ownershipFilter !== "all",
+  ].filter(Boolean).length;
+
+  function resetColumnFilters() {
+    setStatus("all");
+    setStateFilter("all");
+    setCityFilter("all");
+    setIndustryFilter("all");
+    setOwnershipFilter("all");
+    setPage(0);
+  }
 
   const columns = useMemo<ColumnDef<Company>[]>(
     () => [
@@ -370,6 +412,85 @@ export function CompaniesTable({
             </option>
           ))}
         </select>
+        <details className="group relative">
+          <summary
+            className={`flex h-9 list-none cursor-pointer items-center gap-2 rounded-lg border px-3 text-xs [&::-webkit-details-marker]:hidden ${activeFilterCount ? "border-[#9fc9bc] bg-[#edf6f2] text-[#17644f]" : "border-[#d7d4cc] bg-white"}`}
+          >
+            <SlidersHorizontal size={13} /> Spaltenfilter
+            {activeFilterCount ? (
+              <span className="grid size-5 place-items-center rounded-full bg-[#17644f] text-[10px] font-semibold text-white">
+                {activeFilterCount}
+              </span>
+            ) : null}
+          </summary>
+          <div className="absolute right-0 top-11 z-40 w-[min(420px,calc(100vw-2.5rem))] rounded-xl border border-[#d7d4cc] bg-[#faf9f6] p-4 shadow-xl">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold">Nach Spalten filtern</p>
+                <p className="mt-1 text-xs text-[#75807c]">
+                  Mehrere Filter werden miteinander kombiniert.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={resetColumnFilters}
+                disabled={!activeFilterCount}
+                className="flex h-8 items-center gap-1.5 rounded-lg border border-[#d7d4cc] bg-white px-2.5 text-xs disabled:opacity-45"
+              >
+                <RotateCcw size={12} /> Zurücksetzen
+              </button>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <ColumnFilterSelect
+                label="Bundesland"
+                value={stateFilter}
+                options={stateOptions}
+                onChange={(value) => {
+                  setStateFilter(value);
+                  setPage(0);
+                }}
+              />
+              <ColumnFilterSelect
+                label="Stadt"
+                value={cityFilter}
+                options={cityOptions}
+                onChange={(value) => {
+                  setCityFilter(value);
+                  setPage(0);
+                }}
+              />
+              <ColumnFilterSelect
+                label="Branche"
+                value={industryFilter}
+                options={industryOptions}
+                onChange={(value) => {
+                  setIndustryFilter(value);
+                  setPage(0);
+                }}
+              />
+              <label className="text-xs font-semibold text-[#5f6a66]">
+                Eigentümerstruktur
+                <select
+                  value={ownershipFilter}
+                  onChange={(event) => {
+                    setOwnershipFilter(
+                      event.target.value as Company["ownership"] | "all",
+                    );
+                    setPage(0);
+                  }}
+                  className="mt-1.5 h-9 w-full rounded-lg border border-[#d7d4cc] bg-white px-2.5 text-xs font-normal text-[#26332f]"
+                >
+                  <option value="all">Alle</option>
+                  {ownershipOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {ownershipLabel(option)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
+        </details>
         <button
           onClick={() => {
             setFavoritesOnly((value) => !value);
@@ -479,5 +600,43 @@ export function CompaniesTable({
         </div>
       </div>
     </section>
+  );
+}
+
+function uniqueOptions(values: string[]) {
+  return Array.from(
+    new Set(
+      values.filter((value) => value && value !== "N/A" && value !== "N/V"),
+    ),
+  ).sort((left, right) => left.localeCompare(right, "de"));
+}
+
+function ColumnFilterSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="text-xs font-semibold text-[#5f6a66]">
+      {label}
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1.5 h-9 w-full rounded-lg border border-[#d7d4cc] bg-white px-2.5 text-xs font-normal text-[#26332f]"
+      >
+        <option value="all">Alle</option>
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

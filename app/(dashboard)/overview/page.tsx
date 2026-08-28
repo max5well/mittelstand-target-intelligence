@@ -10,7 +10,7 @@ import { hasLiveDataBackend } from "@/lib/integrations/status";
 export default async function OverviewPage() {
   const user = await requireUser();
   const companies = hasLiveDataBackend()
-    ? await listCompanies(user.workspaceId)
+    ? await listCompanies(user.workspaceId, user.id)
     : [];
   const shortlisted = companies.filter(
     (company) => company.status === "shortlisted",

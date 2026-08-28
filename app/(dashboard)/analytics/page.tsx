@@ -20,7 +20,7 @@ export default async function AnalyticsPage() {
   const configured = hasLiveDataBackend();
   const [companies, jobs] = configured
     ? await Promise.all([
-        listCompanies(user.workspaceId),
+        listCompanies(user.workspaceId, user.id),
         listJobs(user.workspaceId),
       ])
     : [[], []];

@@ -8,7 +8,7 @@ import { hasLiveDataBackend } from "@/lib/integrations/status";
 export default async function MapPage() {
   const user = await requireUser();
   const companies = hasLiveDataBackend()
-    ? await listCompanies(user.workspaceId)
+    ? await listCompanies(user.workspaceId, user.id)
     : [];
   return (
     <div className="mx-auto max-w-[1500px] p-5 md:p-9">

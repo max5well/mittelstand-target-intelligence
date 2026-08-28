@@ -10,7 +10,10 @@ import { getWz2025IndustryName } from "@/lib/wz2025";
 
 type Row = Record<string, unknown>;
 
-export async function listCompanies(workspaceId: string): Promise<Company[]> {
+export async function listCompanies(
+  workspaceId: string,
+  userId: string,
+): Promise<Company[]> {
   if (
     !process.env.NEXT_PUBLIC_SUPABASE_URL ||
     (!process.env.SUPABASE_SECRET_KEY &&
@@ -77,7 +80,8 @@ export async function listCompanies(workspaceId: string): Promise<Company[]> {
     supabase
       .from("favorites")
       .select("company_id")
-      .eq("workspace_id", workspaceId),
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", userId),
     supabase
       .from("apollo_organizations")
       .select("*")
@@ -238,7 +242,11 @@ function asWzCodes(value: unknown): string[] {
   });
 }
 
-export async function getCompanyById(workspaceId: string, companyId: string) {
-  const companies = await listCompanies(workspaceId);
+export async function getCompanyById(
+  workspaceId: string,
+  userId: string,
+  companyId: string,
+) {
+  const companies = await listCompanies(workspaceId, userId);
   return companies.find((company) => company.id === companyId) ?? null;
 }
