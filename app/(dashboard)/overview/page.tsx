@@ -81,7 +81,7 @@ export default async function OverviewPage() {
               </div>
               <Link
                 href="/companies"
-                className="flex items-center gap-1 text-sm font-semibold text-[#16856b]"
+                className="flex items-center gap-1 text-sm font-semibold text-[#13745f]"
               >
                 Alle anzeigen <ArrowUpRight size={14} />
               </Link>
@@ -108,7 +108,7 @@ export default async function OverviewPage() {
                     <span className="text-sm font-medium tabular-nums">
                       {formatMoney(company.revenueCents)}
                     </span>
-                    <span className="text-sm font-semibold text-[#16856b]">
+                    <span className="text-sm font-semibold text-[#13745f]">
                       {company.score}
                     </span>
                     <span className="sr-only">

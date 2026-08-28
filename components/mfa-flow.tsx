@@ -24,7 +24,7 @@ export function MfaFlow() {
       const { data: enrolled, error: enrollError } =
         await supabase.auth.mfa.enroll({
           factorType: "totp",
-          friendlyName: "Unternehmen admin TOTP",
+          friendlyName: "Zielunternehmen admin TOTP",
         });
       if (enrollError) {
         setError("TOTP konnte nicht eingerichtet werden.");
@@ -94,7 +94,7 @@ export function MfaFlow() {
       )}
       <button
         disabled={!factorId}
-        className="mt-4 h-11 w-full rounded-lg bg-[#13201d] text-sm font-semibold text-white disabled:opacity-50"
+        className="mt-4 h-11 w-full rounded-lg bg-[#15352e] text-sm font-semibold text-white disabled:opacity-50"
       >
         Code bestätigen
       </button>

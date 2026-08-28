@@ -39,6 +39,30 @@ const FirecrawlSchema = z
       .optional(),
   })
   .passthrough();
+
+const FirecrawlSearchSchema = z
+  .object({
+    success: z.boolean(),
+    data: z
+      .object({
+        web: z
+          .array(
+            z
+              .object({
+                url: z.string().url(),
+                title: z.string().nullable().optional(),
+                description: z.string().nullable().optional(),
+                markdown: z.string().nullable().optional(),
+              })
+              .passthrough(),
+          )
+          .default([]),
+      })
+      .passthrough(),
+    creditsUsed: z.number().optional(),
+  })
+  .passthrough();
+
 export class FirecrawlProvider implements WebResearchProvider {
   readonly name = "firecrawl";
   isAvailable() {
@@ -96,6 +120,54 @@ export class FirecrawlProvider implements WebResearchProvider {
           },
         ]
       : [];
+  }
+
+  async discoverOfficialWebsite(input: { companyName: string; city?: string }) {
+    if (process.env.MOCK_PROVIDERS !== "false")
+      return [
+        {
+          provider: "firecrawl" as const,
+          url: "https://example.com",
+          title: `${input.companyName} — official website`,
+          content: `${input.companyName}, ${input.city ?? "Deutschland"}`,
+          publishedAt: null,
+          score: null,
+          retrievedAt: new Date().toISOString(),
+        },
+      ];
+    const payload = await fetchProvider(
+      "https://api.firecrawl.dev/v2/search",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.FIRECRAWL_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          query: buildCompanyWebsiteQuery(input.companyName, input.city),
+          limit: 10,
+          sources: ["web"],
+          location: input.city ? `${input.city}, Germany` : "Germany",
+          country: "DE",
+          ignoreInvalidURLs: true,
+          scrapeOptions: {
+            formats: ["markdown"],
+            onlyMainContent: true,
+          },
+        }),
+      },
+      FirecrawlSearchSchema,
+    );
+    const retrievedAt = new Date().toISOString();
+    return payload.data.web.map((result) => ({
+      provider: "firecrawl" as const,
+      url: result.url,
+      title: result.title ?? null,
+      content: result.markdown ?? result.description ?? "",
+      publishedAt: null,
+      score: null,
+      retrievedAt,
+    }));
   }
 }
 

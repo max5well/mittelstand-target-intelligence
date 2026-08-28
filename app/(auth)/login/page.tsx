@@ -1,7 +1,8 @@
-import { Building2, LockKeyhole } from "lucide-react";
+import { LockKeyhole } from "lucide-react";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/login-form";
+import { BrandMark } from "@/components/brand-mark";
 import { getOwnerPreviewIdentity } from "@/lib/auth/preview";
 
 export default async function LoginPage({
@@ -12,21 +13,21 @@ export default async function LoginPage({
   if (getOwnerPreviewIdentity(await headers())) redirect("/overview");
   const { reason } = await searchParams;
   return (
-    <main className="grid min-h-screen place-items-center bg-[#13201d] p-5">
-      <section className="w-full max-w-[420px] rounded-2xl border border-white/10 bg-[#f8f7f3] p-7 shadow-2xl">
+    <main className="grid min-h-screen place-items-center bg-[#15352e] p-5">
+      <section className="w-full max-w-[420px] rounded-2xl border border-white/10 bg-[#f8f6f0] p-7 shadow-2xl">
         <div className="flex items-center gap-3">
-          <span className="grid size-10 place-items-center rounded-xl bg-[#30c7a1] text-[#13201d]">
-            <Building2 size={19} />
+          <span className="grid size-11 place-items-center rounded-xl bg-[#15352e] p-1.5 shadow-sm">
+            <BrandMark inverse className="size-full" />
           </span>
           <div>
-            <p className="text-sm font-semibold">Unternehmen</p>
+            <p className="text-sm font-semibold">Zielunternehmen</p>
             <p className="text-xs uppercase tracking-[.14em] text-[#75807c]">
-              Private Zielmarkt-Intelligence
+              Private Target Intelligence
             </p>
           </div>
         </div>
         <div className="mt-8">
-          <div className="flex items-center gap-2 text-[#16856b]">
+          <div className="flex items-center gap-2 text-[#13745f]">
             <LockKeyhole size={14} />
             <p className="text-xs font-semibold uppercase tracking-[.13em]">
               Arbeitsbereich nur mit Einladung
@@ -43,7 +44,9 @@ export default async function LoginPage({
             <p className="mt-4 rounded-lg border border-[#ead6a5] bg-[#fff5d9] p-3 text-xs text-[#71591f]">
               {reason === "not_invited"
                 ? "Dieses Konto ist kein aktives Mitglied des Arbeitsbereichs."
-                : "Die Authentifizierung ist für diese Umgebung nicht eingerichtet."}
+                : reason === "auth_error"
+                  ? "Google-Anmeldung fehlgeschlagen. Bitte erneut versuchen."
+                  : "Die Authentifizierung ist für diese Umgebung nicht eingerichtet."}
             </p>
           )}
           <LoginForm />

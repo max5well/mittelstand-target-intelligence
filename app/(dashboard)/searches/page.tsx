@@ -36,7 +36,7 @@ export default async function SearchesPage() {
         <>
           <section className="mt-8">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[.14em] text-[#16856b]">
+              <p className="text-xs font-semibold uppercase tracking-[.14em] text-[#13745f]">
                 Neue Suchabfragen
               </p>
               <h2 className="mt-2 text-xl font-semibold">

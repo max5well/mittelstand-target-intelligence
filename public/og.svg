@@ -1,0 +1,15 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="630" fill="#15352E"/>
+  <circle cx="1030" cy="110" r="350" fill="#24B894" fill-opacity=".08"/>
+  <circle cx="1080" cy="570" r="420" fill="#24B894" fill-opacity=".05"/>
+  <g transform="translate(92 174) scale(3)">
+    <path d="M7 19V8h11M46 8h11v11M57 45v11H46M18 56H7V45" stroke="#24B894" stroke-width="5" stroke-linecap="square"/>
+    <path d="M17 17h30v8L29 43h19v7H16v-8l18-18H17v-7Z" fill="white"/>
+    <path d="M35 34l8-5 8 5v15H35V34Z" fill="white"/>
+    <path d="M41 36h3v4h-3v-4Zm5 0h3v4h-3v-4Zm-5 6h3v4h-3v-4Zm5 0h3v4h-3v-4Z" fill="#15352E"/>
+  </g>
+  <text x="330" y="292" fill="white" font-family="Arial, Helvetica, sans-serif" font-size="74" font-weight="700" letter-spacing="-3">Zielunternehmen</text>
+  <text x="334" y="354" fill="#A9DED1" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="600" letter-spacing="3">PRIVATE TARGET INTELLIGENCE</text>
+  <path d="M334 403h670" stroke="#24B894" stroke-opacity=".45"/>
+  <text x="334" y="456" fill="#F3F0E8" fill-opacity=".78" font-family="Arial, Helvetica, sans-serif" font-size="25">Deutsche Unternehmen entdecken, bewerten und priorisieren.</text>
+</svg>

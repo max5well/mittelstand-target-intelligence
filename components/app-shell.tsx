@@ -13,6 +13,7 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import { BrandMark } from "@/components/brand-mark";
 
 const navigation = [
   { label: "Übersicht", href: "/overview", icon: BarChart3 },
@@ -32,19 +33,21 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   return (
-    <main className="min-h-screen bg-[#f3f1eb] text-[#18201e]">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[244px] flex-col bg-[#13201d] text-white lg:flex">
+    <main className="min-h-screen bg-[#f3f0e8] text-[#1d2522]">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[244px] flex-col bg-[#15352e] text-white lg:flex">
         <Link
           href="/overview"
           className="flex h-20 items-center gap-3 border-b border-white/10 px-6"
         >
-          <span className="grid size-9 place-items-center rounded-lg bg-[#30c7a1] text-[#0e1b18]">
-            <Building2 size={18} />
+          <span className="grid size-10 place-items-center rounded-xl bg-white/[.06] p-1 ring-1 ring-white/10">
+            <BrandMark inverse className="size-full" />
           </span>
           <div>
-            <p className="text-sm font-semibold tracking-wide">Unternehmen</p>
+            <p className="text-sm font-semibold tracking-[-.01em]">
+              Zielunternehmen
+            </p>
             <p className="text-xs uppercase tracking-[.14em] text-white/55">
-              Zielmarkt-Intelligence
+              Target Intelligence
             </p>
           </div>
         </Link>
@@ -62,7 +65,7 @@ export function AppShell({
                 href={href}
                 className={`flex items-center gap-3 rounded-lg px-3 py-2.5 transition ${active ? "bg-white/10 text-white" : "text-white/58 hover:bg-white/5 hover:text-white"}`}
               >
-                <Icon size={15} className={active ? "text-[#45d1ad]" : ""} />
+                <Icon size={15} className={active ? "text-[#24b894]" : ""} />
                 {label}
               </Link>
             );
@@ -88,9 +91,9 @@ export function AppShell({
         </div>
       </aside>
       <section className="lg:pl-[244px]">
-        <header className="sticky top-0 z-20 flex h-20 items-center justify-between border-b border-[#dedbd2] bg-[#f8f7f3]/90 px-5 backdrop-blur md:px-9">
+        <header className="sticky top-0 z-20 flex h-20 items-center justify-between border-b border-[#dedbd2] bg-[#f8f6f0]/90 px-5 backdrop-blur md:px-9">
           <div className="flex items-center gap-3">
-            <BriefcaseBusiness size={16} className="text-[#16856b]" />
+            <BriefcaseBusiness size={16} className="text-[#13745f]" />
             <div>
               <p className="text-xs font-medium uppercase tracking-[.12em] text-[#75807c]">
                 Investment-Arbeitsbereich
@@ -127,7 +130,7 @@ export function PageHeader({
   return (
     <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
       <div>
-        <p className="mb-2 text-xs font-semibold uppercase tracking-[.12em] text-[#16856b]">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-[.12em] text-[#13745f]">
           {eyebrow}
         </p>
         <h1 className="text-3xl font-semibold tracking-[-.035em] md:text-[38px]">

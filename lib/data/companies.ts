@@ -13,6 +13,7 @@ type Row = Record<string, unknown>;
 export async function listCompanies(
   workspaceId: string,
   userId: string,
+  options: { includeArchived?: boolean } = {},
 ): Promise<Company[]> {
   if (
     !process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -21,11 +22,17 @@ export async function listCompanies(
   )
     return [];
   const supabase = createAdminClient();
-  const { data: companyRows, error } = await supabase
+  let companiesQuery = supabase
     .from("companies")
     .select("*")
-    .eq("workspace_id", workspaceId)
-    .order("updated_at", { ascending: false });
+    .eq("workspace_id", workspaceId);
+  if (!options.includeArchived) {
+    companiesQuery = companiesQuery.neq("status", "archived");
+  }
+  const { data: companyRows, error } = await companiesQuery.order(
+    "updated_at",
+    { ascending: false },
+  );
   if (error) throw new Error(`Unable to load companies: ${error.message}`);
   if (!companyRows?.length) return [];
 
@@ -247,6 +254,8 @@ export async function getCompanyById(
   userId: string,
   companyId: string,
 ) {
-  const companies = await listCompanies(workspaceId, userId);
+  const companies = await listCompanies(workspaceId, userId, {
+    includeArchived: true,
+  });
   return companies.find((company) => company.id === companyId) ?? null;
 }

@@ -38,6 +38,7 @@ export async function runExternalProviderEnrichment(input: {
   companyId: string;
   stage: ExternalProviderStage;
   force?: boolean;
+  searchRunId?: string | null;
 }) {
   if (input.stage === "website_discovery") return runWebsiteDiscovery(input);
   const supabase = createAdminClient();
@@ -228,6 +229,7 @@ async function runWebsiteDiscovery(input: {
   workspaceId: string;
   companyId: string;
   force?: boolean;
+  searchRunId?: string | null;
 }) {
   const supabase = createAdminClient();
   const { data: company, error: companyError } = await supabase
@@ -240,10 +242,6 @@ async function runWebsiteDiscovery(input: {
     .single();
   if (companyError || !company)
     throw new Error(companyError?.message ?? "Company not found");
-  if (!company.openregister_company_id)
-    throw new Error(
-      "This target has no OpenRegister company ID to verify against",
-    );
   if (company.website_url && !input.force)
     return {
       skipped: true,
@@ -288,13 +286,14 @@ async function runWebsiteDiscovery(input: {
     .insert({
       workspace_id: input.workspaceId,
       company_id: input.companyId,
+      search_run_id: input.searchRunId ?? null,
       provider: "tavily",
       job_type: "website_discovery",
       status: "running",
       idempotency_key: `${input.companyId}:website_discovery:${randomUUID()}`,
       payload: { legalName: company.legal_name, city: location?.city ?? null },
       attempt_count: 1,
-      estimated_credits: 12,
+      estimated_credits: input.searchRunId ? 4 : 12,
       started_at: startedAt.toISOString(),
     })
     .select("id")
@@ -304,62 +303,216 @@ async function runWebsiteDiscovery(input: {
       jobError?.message ?? "Unable to create website discovery job",
     );
 
-  let lookupAttempted = false;
-  let lookupStatus = 200;
+  const usageEvents: Array<{
+    workspace_id: string;
+    provider: string;
+    endpoint: string;
+    enrichment_job_id: string;
+    estimated_credits: number;
+    actual_credits: number;
+    request_count: number;
+    http_status: number | null;
+    duration_ms: number;
+  }> = [];
+  const attempts: Array<{
+    provider: "tavily" | "firecrawl" | "openregister";
+    status: "succeeded" | "failed" | "skipped";
+    httpStatus?: number;
+    returned?: number;
+    message?: string;
+  }> = [];
   try {
-    const sources = await new TavilyProvider().discoverOfficialWebsite({
-      companyName: company.legal_name,
-      city: location?.city ?? undefined,
-    });
-    const profile = websiteVerificationProfile({
+    const profile = buildWebsiteVerificationProfile({
       companyName: company.legal_name,
       city: location?.city,
       addressLine: location?.address_line,
       postcode: location?.postcode,
       rawProviderPayload: company.raw_provider_payload,
     });
-    const candidates = selectOfficialWebsiteCandidates(
-      company.legal_name,
-      sources,
-    );
-    const candidate =
-      candidates.find(
-        (item) => verifyOfficialWebsiteEvidence(profile, item.sources).matched,
-      ) ?? candidates[0];
     let verifiedWebsite: string | null = null;
     let verification = "no_verified_match";
     let evidenceSignals: WebsiteEvidenceSignal[] = [];
-    let lookupReturnedCompany = false;
-    if (candidate) {
-      lookupAttempted = true;
+    let selectedSources: WebSource[] = [];
+    let lookupBlocked = false;
+    const allowOpenRegisterLookup = !input.searchRunId;
+
+    const discover = async (
+      provider: "tavily" | "firecrawl",
+      endpoint: string,
+      request: () => Promise<WebSource[]>,
+    ) => {
+      const requestStartedAt = Date.now();
       try {
-        const match = await new OpenRegisterProvider().lookupCompanyByUrl(
-          candidate.url,
-        );
-        lookupReturnedCompany = true;
-        if (match.company_id === company.openregister_company_id) {
-          verifiedWebsite = candidate.url;
-          verification = "openregister_company_id_match";
-        }
+        const sources = await request();
+        attempts.push({
+          provider,
+          status: "succeeded",
+          returned: sources.length,
+        });
+        usageEvents.push({
+          workspace_id: input.workspaceId,
+          provider,
+          endpoint,
+          enrichment_job_id: job.id,
+          estimated_credits: 2,
+          actual_credits: 2,
+          request_count: 1,
+          http_status: 200,
+          duration_ms: Date.now() - requestStartedAt,
+        });
+        return sources;
       } catch (error) {
-        if (error instanceof ProviderError && error.status === 404) {
-          lookupStatus = 404;
-        } else {
-          throw error;
-        }
+        const status = error instanceof ProviderError ? error.status : 500;
+        attempts.push({
+          provider,
+          status: "failed",
+          httpStatus: status,
+          message: error instanceof Error ? error.message : "Provider failed",
+        });
+        usageEvents.push({
+          workspace_id: input.workspaceId,
+          provider,
+          endpoint,
+          enrichment_job_id: job.id,
+          estimated_credits: 2,
+          actual_credits: 0,
+          request_count: 1,
+          http_status: status,
+          duration_ms: Date.now() - requestStartedAt,
+        });
+        return null;
       }
-      if (!verifiedWebsite && !lookupReturnedCompany) {
+    };
+
+    const verifyCandidates = async (sources: WebSource[]) => {
+      const candidates = selectOfficialWebsiteCandidates(
+        company.legal_name,
+        sources,
+      );
+      for (const candidate of candidates) {
         const evidenceMatch = verifyOfficialWebsiteEvidence(
           profile,
           candidate.sources,
         );
-        evidenceSignals = evidenceMatch.signals;
         if (evidenceMatch.matched) {
           verifiedWebsite = candidate.url;
-          verification = "openregister_profile_evidence_match";
+          verification = `${candidate.source.provider}_profile_evidence_match`;
+          evidenceSignals = evidenceMatch.signals;
+          selectedSources = candidate.sources;
+          return true;
         }
       }
+      if (
+        allowOpenRegisterLookup &&
+        !lookupBlocked &&
+        company.openregister_company_id &&
+        !company.openregister_company_id.startsWith("manual:")
+      ) {
+        for (const candidate of candidates.slice(0, 1)) {
+          const requestStartedAt = Date.now();
+          try {
+            const match = await new OpenRegisterProvider().lookupCompanyByUrl(
+              candidate.url,
+            );
+            attempts.push({
+              provider: "openregister",
+              status: "succeeded",
+              httpStatus: 200,
+              returned: 1,
+            });
+            usageEvents.push({
+              workspace_id: input.workspaceId,
+              provider: "openregister",
+              endpoint: "GET /v0/search/lookup",
+              enrichment_job_id: job.id,
+              estimated_credits: 10,
+              actual_credits: 10,
+              request_count: 1,
+              http_status: 200,
+              duration_ms: Date.now() - requestStartedAt,
+            });
+            if (match.company_id === company.openregister_company_id) {
+              verifiedWebsite = candidate.url;
+              verification = "openregister_company_id_match";
+              selectedSources = candidate.sources;
+              return true;
+            }
+          } catch (error) {
+            const status = error instanceof ProviderError ? error.status : 500;
+            attempts.push({
+              provider: "openregister",
+              status: "failed",
+              httpStatus: status,
+              message:
+                error instanceof Error ? error.message : "Provider failed",
+            });
+            usageEvents.push({
+              workspace_id: input.workspaceId,
+              provider: "openregister",
+              endpoint: "GET /v0/search/lookup",
+              enrichment_job_id: job.id,
+              estimated_credits: 10,
+              actual_credits: status === 402 ? 0 : 10,
+              request_count: 1,
+              http_status: status,
+              duration_ms: Date.now() - requestStartedAt,
+            });
+            if (status !== 404) lookupBlocked = true;
+            if (lookupBlocked) break;
+          }
+        }
+      }
+      return false;
+    };
+
+    const tavily = new TavilyProvider();
+    const firecrawl = new FirecrawlProvider();
+    let tavilySources: WebSource[] | null = null;
+    if (tavily.isAvailable())
+      tavilySources = await discover(
+        "tavily",
+        "POST /search (website discovery)",
+        () =>
+          tavily.discoverOfficialWebsite({
+            companyName: company.legal_name,
+            city: profile.city ?? undefined,
+          }),
+      );
+    else attempts.push({ provider: "tavily", status: "skipped" });
+
+    if (tavilySources?.length) await verifyCandidates(tavilySources);
+
+    if (!verifiedWebsite) {
+      if (firecrawl.isAvailable()) {
+        const firecrawlSources = await discover(
+          "firecrawl",
+          "POST /v2/search (website discovery)",
+          () =>
+            firecrawl.discoverOfficialWebsite({
+              companyName: company.legal_name,
+              city: profile.city ?? undefined,
+            }),
+        );
+        if (firecrawlSources?.length) await verifyCandidates(firecrawlSources);
+      } else attempts.push({ provider: "firecrawl", status: "skipped" });
     }
+
+    const providerFailures = attempts.filter(
+      (attempt) => attempt.status === "failed",
+    );
+    const providerSuccesses = attempts.filter(
+      (attempt) =>
+        attempt.status === "succeeded" && attempt.provider !== "openregister",
+    );
+    if (!providerSuccesses.length && providerFailures.length)
+      throw new Error(
+        providerFailures.map((attempt) => attempt.message).join(" "),
+      );
+    if (!providerSuccesses.length)
+      throw new Error(
+        "Website discovery requires a configured Tavily or Firecrawl provider.",
+      );
+
     if (verifiedWebsite) {
       const { error } = await supabase
         .from("companies")
@@ -374,41 +527,16 @@ async function runWebsiteDiscovery(input: {
         input.workspaceId,
         input.companyId,
         company.legal_name,
-        candidate?.sources ?? [],
+        selectedSources,
       );
     }
 
     const completedAt = new Date();
-    const actualCredits = 2 + (lookupAttempted ? 10 : 0);
+    const actualCredits = usageEvents.reduce(
+      (total, event) => total + event.actual_credits,
+      0,
+    );
     const available = Boolean(verifiedWebsite);
-    const usageEvents = [
-      {
-        workspace_id: input.workspaceId,
-        provider: "tavily",
-        endpoint: "POST /search (website discovery)",
-        enrichment_job_id: job.id,
-        estimated_credits: 2,
-        actual_credits: 2,
-        request_count: 1,
-        http_status: 200,
-        duration_ms: completedAt.getTime() - startedAt.getTime(),
-      },
-      ...(lookupAttempted
-        ? [
-            {
-              workspace_id: input.workspaceId,
-              provider: "openregister",
-              endpoint: "GET /v0/search/lookup",
-              enrichment_job_id: job.id,
-              estimated_credits: 10,
-              actual_credits: 10,
-              request_count: 1,
-              http_status: lookupStatus,
-              duration_ms: completedAt.getTime() - startedAt.getTime(),
-            },
-          ]
-        : []),
-    ];
     const [jobResult] = await Promise.all([
       supabase
         .from("enrichment_jobs")
@@ -422,12 +550,15 @@ async function runWebsiteDiscovery(input: {
             website: verifiedWebsite,
             verification,
             evidenceSignals,
+            attempts,
           },
         })
         .eq("id", job.id)
         .select("id,status,actual_credits,completed_at,payload")
         .single(),
-      supabase.from("provider_usage_events").insert(usageEvents),
+      usageEvents.length
+        ? supabase.from("provider_usage_events").insert(usageEvents)
+        : Promise.resolve({ error: null }),
     ]);
     if (jobResult.error) throw new Error(jobResult.error.message);
     return {
@@ -439,12 +570,16 @@ async function runWebsiteDiscovery(input: {
     };
   } catch (error) {
     const completedAt = new Date();
+    const actualCredits = usageEvents.reduce(
+      (total, event) => total + event.actual_credits,
+      0,
+    );
     await Promise.all([
       supabase
         .from("enrichment_jobs")
         .update({
           status: "failed",
-          actual_credits: 2 + (lookupAttempted ? 10 : 0),
+          actual_credits: actualCredits,
           completed_at: completedAt.toISOString(),
           error_details: {
             message:
@@ -454,35 +589,9 @@ async function runWebsiteDiscovery(input: {
           },
         })
         .eq("id", job.id),
-      supabase.from("provider_usage_events").insert([
-        {
-          workspace_id: input.workspaceId,
-          provider: "tavily",
-          endpoint: "POST /search (website discovery)",
-          enrichment_job_id: job.id,
-          estimated_credits: 2,
-          actual_credits: 2,
-          request_count: 1,
-          http_status: lookupAttempted ? 200 : null,
-          duration_ms: completedAt.getTime() - startedAt.getTime(),
-        },
-        ...(lookupAttempted
-          ? [
-              {
-                workspace_id: input.workspaceId,
-                provider: "openregister",
-                endpoint: "GET /v0/search/lookup",
-                enrichment_job_id: job.id,
-                estimated_credits: 10,
-                actual_credits: 10,
-                request_count: 1,
-                http_status:
-                  error instanceof ProviderError ? error.status : null,
-                duration_ms: completedAt.getTime() - startedAt.getTime(),
-              },
-            ]
-          : []),
-      ]),
+      usageEvents.length
+        ? supabase.from("provider_usage_events").insert(usageEvents)
+        : Promise.resolve({ error: null }),
     ]);
     throw error;
   }
@@ -679,7 +788,7 @@ function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function websiteVerificationProfile(input: {
+export function buildWebsiteVerificationProfile(input: {
   companyName: string;
   city?: string | null;
   addressLine?: string | null;
@@ -687,13 +796,31 @@ function websiteVerificationProfile(input: {
   rawProviderPayload: unknown;
 }): WebsiteVerificationProfile {
   const raw = asRecord(input.rawProviderPayload);
+  const rawAddress = asRecord(raw.address);
   const representatives = Array.isArray(raw.representation)
     ? raw.representation.flatMap((value) => {
         const name = asText(asRecord(value).name);
         return name ? [name] : [];
       })
     : [];
-  return { ...input, representatives };
+  return {
+    companyName: input.companyName,
+    city:
+      input.city ?? asText(rawAddress.city) ?? asText(raw.city) ?? undefined,
+    addressLine:
+      input.addressLine ??
+      asText(rawAddress.street) ??
+      asText(rawAddress.formatted_value) ??
+      asText(raw.address) ??
+      undefined,
+    postcode:
+      input.postcode ??
+      asText(rawAddress.postal_code) ??
+      asText(rawAddress.postcode) ??
+      asText(raw.postcode) ??
+      undefined,
+    representatives,
+  };
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
