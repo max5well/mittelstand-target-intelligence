@@ -7,18 +7,27 @@ import { hasLiveDataBackend } from "@/lib/integrations/status";
 
 export default async function MapPage() {
   const user = await requireUser();
-  const companies = hasLiveDataBackend() ? await listCompanies(user.workspaceId) : [];
+  const companies = hasLiveDataBackend()
+    ? await listCompanies(user.workspaceId)
+    : [];
   return (
     <div className="mx-auto max-w-[1500px] p-5 md:p-9">
       <PageHeader
-        eyebrow="Spatial intelligence"
-        title="Germany map"
-        description="Explore clustered targets by geography while preserving the active company filters."
+        eyebrow="Geografische Intelligence"
+        title="Deutschlandkarte"
+        description="Erkunden Sie gruppierte Zielunternehmen nach Region, ohne die aktiven Unternehmensfilter zu verändern."
       />
-      {companies.some((company) => company.latitude !== null && company.longitude !== null) ? (
-        <div className="mt-6"><GermanyMap companies={companies} /></div>
+      {companies.some(
+        (company) => company.latitude !== null && company.longitude !== null,
+      ) ? (
+        <div className="mt-6">
+          <GermanyMap companies={companies} />
+        </div>
       ) : (
-        <EmptyDataState title="No mapped companies yet" description="A real map will appear after live companies have verified coordinates. No placeholder markers are displayed." />
+        <EmptyDataState
+          title="Noch keine Unternehmen auf der Karte"
+          description="Die Karte erscheint, sobald Live-Unternehmen verifizierte Koordinaten besitzen. Es werden keine Platzhalter-Markierungen angezeigt."
+        />
       )}
     </div>
   );

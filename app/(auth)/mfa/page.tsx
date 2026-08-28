@@ -9,11 +9,11 @@ export default function MfaPage() {
           <KeyRound size={18} />
         </span>
         <h1 className="mt-5 text-2xl font-semibold">
-          Verify your second factor
+          Zweiten Faktor bestätigen
         </h1>
         <p className="mt-2 text-sm leading-6 text-[#66716d]">
-          Administrators must complete TOTP verification before entering the
-          workspace.
+          Administratoren müssen die TOTP-Prüfung abschließen, bevor sie den
+          Arbeitsbereich öffnen können.
         </p>
         <MfaFlow />
       </section>

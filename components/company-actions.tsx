@@ -38,60 +38,62 @@ const actions: Array<{
   {
     stage: "details",
     provider: "openregister",
-    label: "Refresh profile",
-    description: "Address, industry, purpose and management",
+    label: "Profil aktualisieren",
+    description: "Adresse, Branche, Unternehmensgegenstand und Management",
     icon: RefreshCw,
-    credits: "10 cr",
+    credits: "10 Cr.",
   },
   {
     stage: "financials",
     provider: "openregister",
-    label: "Fetch financials",
-    description: "Reported periods; N/A when OpenRegister has none",
+    label: "Finanzdaten abrufen",
+    description:
+      "Gemeldete Perioden; N/V, wenn OpenRegister keine Daten liefert",
     icon: FileText,
-    credits: "10 cr",
+    credits: "10 Cr.",
   },
   {
     stage: "owners",
     provider: "openregister",
-    label: "Fetch ownership",
-    description: "Shareholders and ownership percentages",
+    label: "Eigentümer abrufen",
+    description: "Gesellschafter und Beteiligungsquoten",
     icon: Users,
-    credits: "10 cr",
+    credits: "10 Cr.",
   },
   {
     stage: "website_discovery",
     provider: "tavily",
-    label: "Find & verify website",
+    label: "Website finden & verifizieren",
     description:
-      "Tavily candidate verified against the OpenRegister company ID",
+      "Tavily-Kandidat wird mit ID oder mehreren OpenRegister-Profildaten abgeglichen",
     icon: Globe2,
-    credits: "up to 12 cr",
+    credits: "bis zu 12 Cr.",
     requiredProviders: ["tavily", "openregister"],
   },
   {
     stage: "apollo_organization",
     provider: "apollo",
-    label: "Enrich with Apollo",
-    description: "Estimated headcount, revenue and organization match",
+    label: "Mit Apollo anreichern",
+    description:
+      "Geschätzte Beschäftigtenzahl, Umsatz und Unternehmensabgleich",
     icon: Users,
-    credits: "1 cr",
+    credits: "1 Cr.",
   },
   {
     stage: "firecrawl_website",
     provider: "firecrawl",
-    label: "Analyze company website",
-    description: "First-party website content saved as source evidence",
+    label: "Unternehmenswebsite analysieren",
+    description: "Inhalte der offiziellen Website als Quellenbeleg speichern",
     icon: Globe2,
-    credits: "est. 1–5 cr",
+    credits: "ca. 1–5 Cr.",
   },
   {
     stage: "tavily_research",
     provider: "tavily",
-    label: "Research web & news",
-    description: "External sources, titles, excerpts and URLs",
+    label: "Web & Nachrichten recherchieren",
+    description: "Externe Quellen, Titel, Auszüge und URLs",
     icon: FileSearch,
-    credits: "2 cr",
+    credits: "2 Cr.",
   },
 ];
 
@@ -131,7 +133,8 @@ export function CompanyActions({
       skipped?: boolean;
       available?: boolean;
     };
-    if (!response.ok) throw new Error(result.error ?? `${stage} failed`);
+    if (!response.ok)
+      throw new Error(result.error ?? `${stage} ist fehlgeschlagen`);
     return result;
   }
 
@@ -144,13 +147,15 @@ export function CompanyActions({
       const result = await run(stage, latest.has(key));
       setMessage(
         result.available === false
-          ? `${action?.label ?? stage} completed, but the provider returned no matching data.`
-          : `${action?.label ?? stage} completed and the results were saved below.`,
+          ? `${action?.label ?? stage} abgeschlossen, aber der Anbieter hat keine passenden Daten geliefert.`
+          : `${action?.label ?? stage} abgeschlossen. Die Ergebnisse wurden unten gespeichert.`,
       );
       router.refresh();
     } catch (error) {
       setMessage(
-        error instanceof Error ? error.message : "Provider action failed",
+        error instanceof Error
+          ? error.message
+          : "Anbieteraktion fehlgeschlagen",
       );
     } finally {
       setBusy(null);
@@ -159,7 +164,7 @@ export function CompanyActions({
 
   async function runAll() {
     setBusy("all");
-    setMessage("Running full OpenRegister enhancement…");
+    setMessage("Vollständige OpenRegister-Anreicherung läuft…");
     try {
       for (const action of actions.filter(
         (candidate) => candidate.provider === "openregister",
@@ -168,11 +173,13 @@ export function CompanyActions({
           action.stage,
           latest.has(`${action.provider}:${action.stage}`),
         );
-      setMessage("Full OpenRegister enhancement completed.");
+      setMessage("Vollständige OpenRegister-Anreicherung abgeschlossen.");
       router.refresh();
     } catch (error) {
       setMessage(
-        error instanceof Error ? error.message : "Full enhancement failed",
+        error instanceof Error
+          ? error.message
+          : "Vollständige Anreicherung fehlgeschlagen",
       );
     } finally {
       setBusy(null);
@@ -204,21 +211,22 @@ export function CompanyActions({
               />
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-semibold">
-                  {previous ? `${label} again` : label}
+                  {previous ? `${label} erneut ausführen` : label}
                 </span>
                 <span className="mt-0.5 block text-xs leading-5 text-[#75807c]">
                   {description}
                 </span>
                 {needsWebsite ? (
                   <span className="mt-1 block text-xs font-medium text-[#8b5a2b]">
-                    Unavailable until a verified website is stored
+                    Nicht verfügbar, bis eine verifizierte Website gespeichert
+                    ist
                   </span>
                 ) : null}
                 {previous ? (
                   <span className="mt-1 flex items-center gap-1 text-xs font-medium text-[#31735f]">
-                    <CheckCircle2 size={11} /> Last run{" "}
+                    <CheckCircle2 size={11} /> Letzte Ausführung{" "}
                     {formatRunDate(previous.completedAt)} ·{" "}
-                    {previous.available ? "data returned" : "not available"}
+                    {previous.available ? "Daten geliefert" : "nicht verfügbar"}
                   </span>
                 ) : null}
               </span>
@@ -240,7 +248,7 @@ export function CompanyActions({
             size={14}
             className={busy === "all" ? "animate-spin" : ""}
           />
-          Full enhancement · 30 credits
+          Vollständige Anreicherung · 30 Credits
         </button>
       ) : null}
       {message ? (
@@ -256,8 +264,8 @@ export function CompanyActions({
 }
 
 function formatRunDate(value: string | null) {
-  if (!value) return "recorded";
-  return new Intl.DateTimeFormat("en-GB", {
+  if (!value) return "erfasst";
+  return new Intl.DateTimeFormat("de-DE", {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));

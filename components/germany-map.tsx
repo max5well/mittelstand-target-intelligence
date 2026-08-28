@@ -162,7 +162,7 @@ export function GermanyMap({ companies }: { companies: Company[] }) {
           >
             <button
               onClick={() => setSelected(group)}
-              aria-label={`Open ${group.companies.length} companies near ${group.key}`}
+              aria-label={`${group.companies.length} Unternehmen bei ${group.key} öffnen`}
               className="group grid size-9 place-items-center rounded-full border-[3px] border-white text-xs font-bold text-white shadow-[0_7px_18px_rgba(20,34,30,.28)] transition hover:scale-110 focus-visible:scale-110 md:size-10"
               style={{ background: markerColor(group) }}
             >
@@ -180,32 +180,37 @@ export function GermanyMap({ companies }: { companies: Company[] }) {
             aria-pressed={mode === item}
             className={`rounded px-3 py-1.5 text-xs font-semibold capitalize ${mode === item ? "bg-[#14221e] text-white" : "text-[#63706b] hover:bg-[#ecebe5]"}`}
           >
-            {item}
+            {item === "status"
+              ? "Status"
+              : item === "ownership"
+                ? "Eigentümer"
+                : "Score"}
           </button>
         ))}
         <button
           onClick={fitResults}
           className="flex items-center gap-1 border-l border-[#d8d5cd] pl-3 text-xs font-semibold text-[#42645b] hover:text-[#0c725b]"
         >
-          <LocateFixed size={12} /> Fit results
+          <LocateFixed size={12} /> Ergebnisse einpassen
         </button>
       </div>
 
       <div className="absolute bottom-7 left-3 z-10 max-w-[calc(100%-28px)] rounded-lg border border-[#d4d1c9] bg-[#faf9f6]/95 px-3 py-2 text-xs text-[#53625d] shadow-sm backdrop-blur md:bottom-4 md:left-4">
-        {located.length} located · {companies.length - located.length} need
-        geocoding review
+        {located.length} verortet · {companies.length - located.length} müssen
+        geocodiert werden
       </div>
 
       {mapError && (
         <div className="absolute bottom-16 left-3 z-10 rounded-lg border border-[#e3c581] bg-[#fff6db] px-3 py-2 text-xs text-[#735a1c] md:left-4">
-          The basemap could not load. Check the network connection and retry.
+          Die Basiskarte konnte nicht geladen werden. Prüfen Sie die
+          Netzwerkverbindung und versuchen Sie es erneut.
         </div>
       )}
 
       {selected && (
         <div className="absolute bottom-16 right-3 top-auto z-20 max-h-[70%] w-[min(320px,calc(100%-24px))] overflow-y-auto rounded-xl border border-[#d4d1c9] bg-[#faf9f6] p-4 shadow-2xl md:bottom-auto md:right-4 md:top-16">
           <button
-            aria-label="Close preview"
+            aria-label="Vorschau schließen"
             onClick={() => setSelected(null)}
             className="absolute right-3 top-3 rounded p-1 text-[#64716c] hover:bg-[#ecebe5]"
           >
@@ -214,8 +219,7 @@ export function GermanyMap({ companies }: { companies: Company[] }) {
           <div className="flex items-center gap-2 pr-7 text-[#16856b]">
             <MapPin size={14} />
             <p className="text-xs font-semibold uppercase tracking-[.1em]">
-              {selected.key} · {selected.companies.length} target
-              {selected.companies.length === 1 ? "" : "s"}
+              {selected.key} · {selected.companies.length} Zielunternehmen
             </p>
           </div>
           <div className="mt-3 divide-y divide-[#dedbd3]">
@@ -223,14 +227,15 @@ export function GermanyMap({ companies }: { companies: Company[] }) {
               <div key={company.id} className="py-3 first:pt-1 last:pb-0">
                 <p className="pr-4 text-sm font-semibold">{company.name}</p>
                 <p className="mt-1 text-xs leading-5 text-[#6a746f]">
-                  {company.industry} · {company.employees ?? "Not reported"}{" "}
-                  employees · Fit {company.score ?? "insufficient data"}
+                  {company.industry} · {company.employees ?? "Nicht gemeldet"}{" "}
+                  Beschäftigte · Eignung{" "}
+                  {company.score ?? "unzureichende Daten"}
                 </p>
                 <a
                   href={`/companies/${company.id}`}
                   className="mt-2 inline-block text-xs font-semibold text-[#087b62] hover:underline"
                 >
-                  Open company →
+                  Unternehmen öffnen →
                 </a>
               </div>
             ))}

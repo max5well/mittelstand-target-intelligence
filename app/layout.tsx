@@ -18,25 +18,25 @@ export const metadata: Metadata = {
     process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
   ),
   title: "Unternehmen — Target Intelligence",
-  description: "Private target intelligence for the German Mittelstand.",
+  description: "Private Zielmarkt-Intelligence für den deutschen Mittelstand.",
   robots: { index: false, follow: false },
   openGraph: {
     title: "Unternehmen",
-    description: "Target intelligence for the German Mittelstand.",
+    description: "Zielmarkt-Intelligence für den deutschen Mittelstand.",
     type: "website",
     images: [
       {
         url: "/og.png",
         width: 1200,
         height: 630,
-        alt: "Unternehmen — Target intelligence for the German Mittelstand",
+        alt: "Unternehmen — Zielmarkt-Intelligence für den deutschen Mittelstand",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
     title: "Unternehmen",
-    description: "Target intelligence for the German Mittelstand.",
+    description: "Zielmarkt-Intelligence für den deutschen Mittelstand.",
     images: ["/og.png"],
   },
 };
@@ -47,7 +47,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="de" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >

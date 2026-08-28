@@ -12,13 +12,18 @@ const CreateSearchSchema = z.object({
   filters: z.array(OpenRegisterFilterSchema).min(1),
   hydrationMode: z.enum(["lean", "full", "custom"]),
   dailyTarget: z.number().int().min(1).max(100),
-  scheduleTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
+  scheduleTime: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+    .optional(),
   active: z.boolean(),
   runNow: z.boolean().default(false),
 });
 
 export async function POST(request: Request) {
-  const authorization = await authorizeWorkspaceRequest(request, { write: true });
+  const authorization = await authorizeWorkspaceRequest(request, {
+    write: true,
+  });
   if (!authorization.ok)
     return NextResponse.json(
       { error: authorization.error },
@@ -35,7 +40,8 @@ export async function POST(request: Request) {
           ? ["details"]
           : [];
     const monthlyCreditEstimate =
-      (10 + input.dailyTarget * (input.hydrationMode === "full" ? 30 : 10)) * 30;
+      (10 + input.dailyTarget * (input.hydrationMode === "full" ? 30 : 10)) *
+      30;
     const { data: search, error } = await supabase
       .from("saved_searches")
       .insert({
@@ -53,11 +59,15 @@ export async function POST(request: Request) {
         monthly_credit_estimate: monthlyCreditEstimate,
         created_by: null,
       })
-      .select("id,workspace_id,filters,daily_target,hydration_mode,hydration_stages")
+      .select(
+        "id,workspace_id,filters,daily_target,hydration_mode,hydration_stages",
+      )
       .single();
     if (error || !search)
       return NextResponse.json(
-        { error: error?.message ?? "Unable to save search" },
+        {
+          error: error?.message ?? "Die Suche konnte nicht gespeichert werden.",
+        },
         { status: 500 },
       );
 
@@ -66,11 +76,19 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof z.ZodError)
       return NextResponse.json(
-        { error: "Invalid saved search", details: z.treeifyError(error) },
+        {
+          error: "Ungültige gespeicherte Suche.",
+          details: z.treeifyError(error),
+        },
         { status: 400 },
       );
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Search setup failed" },
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Suche konnte nicht eingerichtet werden.",
+      },
       { status: 502 },
     );
   }

@@ -51,11 +51,16 @@ export async function POST(
   } catch (error) {
     if (error instanceof z.ZodError)
       return NextResponse.json(
-        { error: "Invalid enrichment request" },
+        { error: "Ungültige Anreicherungsanfrage." },
         { status: 400 },
       );
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Enrichment failed" },
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Anreicherung fehlgeschlagen.",
+      },
       { status: 502 },
     );
   }

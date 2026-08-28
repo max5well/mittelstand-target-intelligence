@@ -12,7 +12,14 @@ import { requireUser } from "@/lib/auth/user";
 import { getCompanyById } from "@/lib/data/companies";
 import { getCompanyEnrichmentEvidence } from "@/lib/data/enrichment";
 import { listJobs } from "@/lib/data/jobs";
-import { formatMoney, formatPercent, statusLabel } from "@/lib/format";
+import {
+  formatMoney,
+  formatPercent,
+  jobStatusLabel,
+  jobTypeLabel,
+  ownershipLabel,
+  statusLabel,
+} from "@/lib/format";
 import { getIntegrationStatuses } from "@/lib/integrations/status";
 
 export default async function CompanyDetailPage({
@@ -72,7 +79,7 @@ export default async function CompanyDetailPage({
         href="/companies"
         className="mb-7 inline-flex items-center gap-2 text-sm font-semibold text-[#5e6b66]"
       >
-        <ArrowLeft size={15} /> Back to companies
+        <ArrowLeft size={15} /> Zurück zu den Unternehmen
       </Link>
       <header className="flex items-start gap-4">
         <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-[#dcebe5] text-[#176f5b]">
@@ -89,7 +96,7 @@ export default async function CompanyDetailPage({
             <span>
               {[company.address, company.postcode, company.city, company.state]
                 .filter((value) => value !== "N/A")
-                .join(", ") || "Location N/A"}
+                .join(", ") || "Standort N/V"}
             </span>
             {company.website && (
               <a
@@ -111,39 +118,41 @@ export default async function CompanyDetailPage({
       <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {[
           [
-            "Revenue",
+            "Umsatz",
             formatMoney(company.revenueCents),
             company.fiscalYear
-              ? `Reported · FY ${company.fiscalYear}`
-              : "Not reported",
+              ? `Gemeldet · GJ ${company.fiscalYear}`
+              : "Nicht gemeldet",
           ],
           [
             "EBITDA",
             formatMoney(company.ebitdaCents),
             company.ebitdaCents
-              ? `${formatPercent(margin)} margin`
-              : "Not reported",
+              ? `${formatPercent(margin)} Marge`
+              : "Nicht gemeldet",
           ],
           [
-            "Employees",
-            company.employees?.toLocaleString() ?? "—",
+            "Beschäftigte",
+            company.employees?.toLocaleString("de-DE") ?? "—",
             company.employeeYear
-              ? `Reported · ${company.employeeYear}`
-              : "Not reported",
+              ? `Gemeldet · ${company.employeeYear}`
+              : "Nicht gemeldet",
           ],
           [
-            "Ownership",
-            company.ownership,
+            "Eigentümerstruktur",
+            ownershipLabel(company.ownership),
             company.ownership === "Unknown"
-              ? "Not classified"
+              ? "Nicht klassifiziert"
               : company.owners.length
-                ? `${company.owners.length} direct owner record${company.owners.length === 1 ? "" : "s"}`
-                : "Rule-based classification; owners not verified",
+                ? `${company.owners.length} direkte${company.owners.length === 1 ? "r Eigentümereintrag" : " Eigentümereinträge"}`
+                : "Regelbasierte Klassifizierung; Eigentümer nicht verifiziert",
           ],
           [
-            "Investment fit",
+            "Investment-Eignung",
             company.score?.toString() ?? "—",
-            company.score ? "Versioned model result" : "No active score",
+            company.score
+              ? "Versioniertes Modellergebnis"
+              : "Kein aktiver Score",
           ],
         ].map(([label, value, note]) => (
           <div
@@ -161,61 +170,64 @@ export default async function CompanyDetailPage({
 
       <div className="mt-7 grid gap-6 xl:grid-cols-[1fr_360px]">
         <section className="rounded-xl border border-[#d8d5cc] bg-[#faf9f6] p-6">
-          <h2 className="text-base font-semibold">Current profile</h2>
+          <h2 className="text-base font-semibold">Aktuelles Profil</h2>
           <dl className="mt-5 grid gap-x-8 gap-y-5 sm:grid-cols-2">
-            <Field label="Legal form" value={company.legalForm} />
+            <Field label="Rechtsform" value={company.legalForm} />
             <Field
-              label="Register reference"
+              label="Handelsregisternummer"
               value={company.registerReference}
             />
-            <Field label="Register court" value={company.registerCourt} />
-            <Field label="Industry" value={company.industry} />
+            <Field label="Registergericht" value={company.registerCourt} />
+            <Field label="Branche" value={company.industry} />
             <Field
-              label="Incorporated"
+              label="Gegründet"
               value={
                 company.incorporationDate
-                  ? new Intl.DateTimeFormat("en-GB", {
+                  ? new Intl.DateTimeFormat("de-DE", {
                       dateStyle: "medium",
                     }).format(new Date(company.incorporationDate))
-                  : "N/A"
+                  : "N/V"
               }
             />
             <Field
-              label="Registered capital"
+              label="Stammkapital"
               value={formatMoney(company.capitalCents)}
             />
-            <Field label="Ownership" value={company.ownership} />
             <Field
-              label="Ownership basis"
+              label="Eigentümerstruktur"
+              value={ownershipLabel(company.ownership)}
+            />
+            <Field
+              label="Grundlage der Klassifizierung"
               value={
                 company.ownershipMethod === "rules"
-                  ? "Rule-based inference"
+                  ? "Regelbasierte Ableitung"
                   : company.ownershipMethod === "openregister_flag"
-                    ? "OpenRegister classification"
+                    ? "OpenRegister-Klassifizierung"
                     : company.ownershipMethod === "ai_with_evidence"
-                      ? "Evidence-based classification"
-                      : "Analyst classification"
+                      ? "Evidenzbasierte Klassifizierung"
+                      : "Analystenklassifizierung"
               }
             />
             <Field
-              label="Profile updated"
-              value={new Intl.DateTimeFormat("en-GB", {
+              label="Profil aktualisiert"
+              value={new Intl.DateTimeFormat("de-DE", {
                 dateStyle: "medium",
                 timeStyle: "short",
                 timeZone: "Europe/Berlin",
               }).format(new Date(company.updatedAt))}
             />
             <Field
-              label="Data classification"
+              label="Datenklassifizierung"
               value={
                 company.sourceType === "reported"
-                  ? "Reported source data"
-                  : "Estimate"
+                  ? "Gemeldete Quelldaten"
+                  : "Schätzung"
               }
             />
           </dl>
           <div className="mt-7 border-t border-[#e1ded6] pt-6">
-            <h3 className="text-sm font-semibold">Business purpose</h3>
+            <h3 className="text-sm font-semibold">Unternehmensgegenstand</h3>
             <p className="mt-2 max-w-4xl text-sm leading-7 text-[#4f5d58]">
               {company.purpose}
             </p>
@@ -223,14 +235,14 @@ export default async function CompanyDetailPage({
           <div className="mt-7 grid gap-6 border-t border-[#e1ded6] pt-6 md:grid-cols-2">
             <ProfileList
               title="Management"
-              empty="N/A"
+              empty="N/V"
               rows={company.management.map(
                 (person) => `${person.name} · ${person.role}`,
               )}
             />
             <ProfileList
-              title="Owners"
-              empty="N/A"
+              title="Eigentümer"
+              empty="N/V"
               rows={company.owners.map(
                 (owner) =>
                   `${owner.name}${owner.percentage === null ? "" : ` · ${owner.percentage}%`}`,
@@ -238,24 +250,24 @@ export default async function CompanyDetailPage({
             />
           </div>
           <div className="mt-7 border-t border-[#e1ded6] pt-6">
-            <h3 className="text-sm font-semibold">Provider enrichment</h3>
+            <h3 className="text-sm font-semibold">Anbieteranreicherung</h3>
             {enrichment.apollo || enrichment.webSources.length ? (
               <div className="mt-4 space-y-4">
                 {enrichment.apollo ? (
                   <div className="rounded-lg border border-[#e0ddd5] bg-white p-4">
                     <p className="text-xs font-semibold uppercase tracking-[.08em] text-[#75807c]">
-                      Apollo · estimated data
+                      Apollo · geschätzte Daten
                     </p>
                     <div className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
                       <p>
                         <span className="block text-xs text-[#7a8580]">
-                          Employees
+                          Beschäftigte
                         </span>
-                        {enrichment.apollo.estimated_employees ?? "N/A"}
+                        {enrichment.apollo.estimated_employees ?? "N/V"}
                       </p>
                       <p>
                         <span className="block text-xs text-[#7a8580]">
-                          Revenue
+                          Umsatz
                         </span>
                         {formatMoney(enrichment.apollo.estimated_revenue_cents)}
                       </p>
@@ -263,7 +275,7 @@ export default async function CompanyDetailPage({
                         <span className="block text-xs text-[#7a8580]">
                           Domain
                         </span>
-                        {enrichment.apollo.domain ?? "N/A"}
+                        {enrichment.apollo.domain ?? "N/V"}
                       </p>
                     </div>
                   </div>
@@ -275,7 +287,7 @@ export default async function CompanyDetailPage({
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="text-xs font-semibold uppercase tracking-[.08em] text-[#75807c]">
-                        {source.provider} · source evidence
+                        {source.provider} · Quellenbeleg
                       </p>
                       <a
                         href={source.url}
@@ -283,31 +295,35 @@ export default async function CompanyDetailPage({
                         rel="noreferrer"
                         className="inline-flex items-center gap-1 text-xs font-semibold text-[#087b62]"
                       >
-                        Open source <ExternalLink size={11} />
+                        Quelle öffnen <ExternalLink size={11} />
                       </a>
                     </div>
                     <p className="mt-2 text-sm font-semibold">
                       {source.title ?? source.url}
                     </p>
                     <p className="mt-2 line-clamp-3 text-sm leading-6 text-[#68736e]">
-                      {source.supporting_excerpt || "No text excerpt returned."}
+                      {source.supporting_excerpt ||
+                        "Kein Textauszug geliefert."}
                     </p>
                   </article>
                 ))}
               </div>
             ) : (
               <p className="mt-2 text-sm text-[#7a8580]">
-                No Apollo, Tavily, or Firecrawl result has been saved for this
-                company yet.
+                Für dieses Unternehmen wurde noch kein Ergebnis von Apollo,
+                Tavily oder Firecrawl gespeichert.
               </p>
             )}
           </div>
           <div className="mt-7 grid gap-4 border-t border-[#e1ded6] pt-6 sm:grid-cols-2 xl:grid-cols-4">
             <FinancialField label="EBIT" value={company.ebitCents} />
-            <FinancialField label="Equity" value={company.equityCents} />
-            <FinancialField label="Financial debt" value={company.debtCents} />
+            <FinancialField label="Eigenkapital" value={company.equityCents} />
             <FinancialField
-              label="Balance sheet total"
+              label="Finanzverbindlichkeiten"
+              value={company.debtCents}
+            />
+            <FinancialField
+              label="Bilanzsumme"
               value={company.totalAssetsCents}
             />
           </div>
@@ -317,27 +333,27 @@ export default async function CompanyDetailPage({
           <section className="rounded-xl border border-[#d8d5cc] bg-[#faf9f6] p-5">
             <div className="flex items-center gap-2">
               <ShieldCheck size={17} className="text-[#16856b]" />
-              <h2 className="text-base font-semibold">Available actions</h2>
+              <h2 className="text-base font-semibold">Verfügbare Aktionen</h2>
             </div>
             {readyProviders.length === 0 ? (
               <>
                 <p className="mt-3 text-sm leading-6 text-[#68736e]">
-                  No provider action is shown because no source is fully
-                  configured and verified for this deployment.
+                  Es werden keine Anbieteraktionen angezeigt, weil keine Quelle
+                  vollständig konfiguriert und geprüft ist.
                 </p>
                 <Link
                   href="/settings?section=integrations"
                   className="mt-4 inline-flex text-sm font-semibold text-[#087b62]"
                 >
-                  Review integrations →
+                  Integrationen prüfen →
                 </Link>
               </>
             ) : (
               <>
                 <p className="mt-3 text-sm leading-6 text-[#68736e]">
-                  Each action writes normalized fields, raw source evidence,
-                  credits, and its completion time. Previous runs stay visible
-                  before you spend credits again.
+                  Jede Aktion speichert normalisierte Felder, Rohdatenbelege,
+                  Credits und den Abschlusszeitpunkt. Frühere Läufe bleiben
+                  sichtbar, bevor erneut Credits verbraucht werden.
                 </p>
                 <CompanyActions
                   companyId={company.id}
@@ -354,26 +370,28 @@ export default async function CompanyDetailPage({
           <section className="rounded-xl border border-[#d8d5cc] bg-[#faf9f6] p-5">
             <div className="flex items-center gap-2">
               <History size={17} className="text-[#16856b]" />
-              <h2 className="text-base font-semibold">Run history</h2>
+              <h2 className="text-base font-semibold">Ausführungshistorie</h2>
             </div>
             <p className="mt-2 text-sm leading-6 text-[#68736e]">
-              Completed runs update normalized company records and preserve raw
-              source evidence. Full operational history is also available under
-              Jobs & usage.
+              Abgeschlossene Läufe aktualisieren die normalisierten
+              Unternehmensdaten und bewahren Rohdatenbelege auf. Die
+              vollständige Historie finden Sie unter „Aufträge & Nutzung“.
             </p>
             {jobs.length ? (
               <div className="mt-5 divide-y divide-[#e3e0d8]">
                 {jobs.map((job) => (
                   <div key={job.id} className="py-3">
                     <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-semibold">{job.type}</p>
+                      <p className="text-sm font-semibold">
+                        {jobTypeLabel(job.type)}
+                      </p>
                       <span className="text-xs font-semibold capitalize text-[#42645b]">
-                        {job.status.replaceAll("_", " ")}
+                        {jobStatusLabel(job.status)}
                       </span>
                     </div>
                     <p className="mt-1 text-xs text-[#7b8581]">
                       {job.provider} ·{" "}
-                      {new Intl.DateTimeFormat("en-GB", {
+                      {new Intl.DateTimeFormat("de-DE", {
                         dateStyle: "medium",
                         timeStyle: "short",
                       }).format(new Date(job.createdAt))}
@@ -383,7 +401,7 @@ export default async function CompanyDetailPage({
               </div>
             ) : (
               <p className="mt-4 rounded-lg bg-[#f0eee9] p-3 text-sm text-[#68736e]">
-                No provider run has been recorded for this company.
+                Für dieses Unternehmen wurde noch kein Anbieterlauf erfasst.
               </p>
             )}
           </section>

@@ -26,19 +26,19 @@ const discovery = [
   { day: "27 Aug", value: 41 },
 ];
 const funnel = [
-  { name: "Tracked", value: 48, fill: "#18342d" },
-  { name: "Reviewed", value: 31, fill: "#226551" },
-  { name: "Shortlisted", value: 12, fill: "#2b9375" },
-  { name: "Dialogue", value: 6, fill: "#4bc5a5" },
-  { name: "Diligence", value: 2, fill: "#8be0c8" },
+  { name: "Erfasst", value: 48, fill: "#18342d" },
+  { name: "Geprüft", value: 31, fill: "#226551" },
+  { name: "Auswahlliste", value: 12, fill: "#2b9375" },
+  { name: "Dialog", value: 6, fill: "#4bc5a5" },
+  { name: "Due Diligence", value: 2, fill: "#8be0c8" },
 ];
 const ownership = [
-  { name: "Family", value: 30 },
-  { name: "Owner-managed", value: 24 },
-  { name: "Founder", value: 17 },
+  { name: "Familiengeführt", value: 30 },
+  { name: "Inhabergeführt", value: 24 },
+  { name: "Gründergeführt", value: 17 },
   { name: "Holding", value: 13 },
-  { name: "Corporate", value: 10 },
-  { name: "PE-backed", value: 6 },
+  { name: "Konzern", value: 10 },
+  { name: "PE-finanziert", value: 6 },
 ];
 const colors = [
   "#18342d",
@@ -52,7 +52,7 @@ const colors = [
 export function AnalyticsCharts() {
   return (
     <div className="grid gap-5 xl:grid-cols-2">
-      <Chart title="Discovery trend" subtitle="New unique companies per day">
+      <Chart title="Suchtrend" subtitle="Neue eindeutige Unternehmen pro Tag">
         <ResponsiveContainer width="100%" height={250}>
           <BarChart data={discovery}>
             <CartesianGrid vertical={false} stroke="#eeeae2" />
@@ -69,8 +69,8 @@ export function AnalyticsCharts() {
         </ResponsiveContainer>
       </Chart>
       <Chart
-        title="Pipeline funnel"
-        subtitle="Conversion denominator: 48 tracked companies"
+        title="Pipeline-Trichter"
+        subtitle="Umwandlungsbasis: 48 erfasste Unternehmen"
       >
         <ResponsiveContainer width="100%" height={250}>
           <FunnelChart>
@@ -86,7 +86,10 @@ export function AnalyticsCharts() {
           </FunnelChart>
         </ResponsiveContainer>
       </Chart>
-      <Chart title="Ownership distribution" subtitle="48 classified companies">
+      <Chart
+        title="Eigentümerstruktur"
+        subtitle="48 klassifizierte Unternehmen"
+      >
         <ResponsiveContainer width="100%" height={250}>
           <PieChart>
             <Pie
@@ -117,18 +120,18 @@ export function AnalyticsCharts() {
         </div>
       </Chart>
       <Chart
-        title="Data coverage"
-        subtitle="Percent of 48 authorized companies"
+        title="Datenabdeckung"
+        subtitle="Anteil von 48 freigegebenen Unternehmen"
       >
         <div className="space-y-5 pt-5">
           {[
             ["Website", 93],
-            ["Financials", 82],
+            ["Finanzdaten", 82],
             ["EBITDA", 63],
-            ["Owners", 71],
-            ["Coordinates", 98],
-            ["Apollo match", 54],
-            ["Web enrichment", 46],
+            ["Eigentümer", 71],
+            ["Koordinaten", 98],
+            ["Apollo-Abgleich", 54],
+            ["Web-Anreicherung", 46],
           ].map(([label, value]) => (
             <div key={String(label)}>
               <div className="mb-2 flex justify-between text-xs">

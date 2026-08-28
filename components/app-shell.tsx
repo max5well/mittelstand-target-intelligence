@@ -15,12 +15,12 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 const navigation = [
-  { label: "Overview", href: "/overview", icon: BarChart3 },
-  { label: "Companies", href: "/companies", icon: Building2 },
-  { label: "Map", href: "/map", icon: Map },
-  { label: "Analytics", href: "/analytics", icon: Globe2 },
-  { label: "Saved searches", href: "/searches", icon: SlidersHorizontal },
-  { label: "Jobs & usage", href: "/jobs", icon: DatabaseZap },
+  { label: "Übersicht", href: "/overview", icon: BarChart3 },
+  { label: "Unternehmen", href: "/companies", icon: Building2 },
+  { label: "Karte", href: "/map", icon: Map },
+  { label: "Analysen", href: "/analytics", icon: Globe2 },
+  { label: "Gespeicherte Suchen", href: "/searches", icon: SlidersHorizontal },
+  { label: "Aufträge & Nutzung", href: "/jobs", icon: DatabaseZap },
 ];
 
 export function AppShell({
@@ -44,11 +44,14 @@ export function AppShell({
           <div>
             <p className="text-sm font-semibold tracking-wide">Unternehmen</p>
             <p className="text-xs uppercase tracking-[.14em] text-white/55">
-              Target intelligence
+              Zielmarkt-Intelligence
             </p>
           </div>
         </Link>
-        <nav aria-label="Primary" className="space-y-1 px-3 py-6 text-sm">
+        <nav
+          aria-label="Hauptnavigation"
+          className="space-y-1 px-3 py-6 text-sm"
+        >
           {navigation.map(({ label, href, icon: Icon }) => {
             const active =
               pathname === href ||
@@ -70,9 +73,9 @@ export function AppShell({
             href="/settings?section=integrations"
             className="block rounded-xl bg-white/[.05] p-3 transition hover:bg-white/[.08]"
           >
-            <p className="text-xs font-medium">Data integrations</p>
+            <p className="text-xs font-medium">Datenintegrationen</p>
             <p className="mt-1 text-xs text-white/45">
-              View configuration and verification status
+              Konfiguration und Prüfstatus anzeigen
             </p>
           </Link>
           <Link
@@ -80,7 +83,7 @@ export function AppShell({
             className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm ${pathname === "/settings" ? "bg-white/10 text-white" : "text-white/58 hover:text-white"}`}
           >
             <Settings size={15} />
-            Settings
+            Einstellungen
           </Link>
         </div>
       </aside>
@@ -90,7 +93,7 @@ export function AppShell({
             <BriefcaseBusiness size={16} className="text-[#16856b]" />
             <div>
               <p className="text-xs font-medium uppercase tracking-[.12em] text-[#75807c]">
-                Investment workspace
+                Investment-Arbeitsbereich
               </p>
               <p className="mt-0.5 text-sm font-semibold">DACH Industrials I</p>
             </div>

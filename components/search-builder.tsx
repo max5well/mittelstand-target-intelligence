@@ -14,6 +14,10 @@ import {
   Save,
   Search,
 } from "lucide-react";
+import {
+  acquisitionTargetPreset,
+  describeAcquisitionPreset,
+} from "@/lib/acquisition-target-preset";
 import { germanStates, registerCourtsForStates } from "@/lib/german-states";
 import { wz2025Industries } from "@/lib/wz2025";
 
@@ -32,7 +36,11 @@ type SearchApiResponse = {
   } | null;
 };
 
-export function SearchBuilder() {
+export function SearchBuilder({
+  triggerLabel = "Neue gespeicherte Suche",
+}: {
+  triggerLabel?: string;
+} = {}) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
   const [open, setOpen] = useState(false);
@@ -46,9 +54,17 @@ export function SearchBuilder() {
   );
   const [dailyTarget, setDailyTarget] = useState(10);
   const [mode, setMode] = useState<"lean" | "full">("full");
-  const [selectedIndustries, setSelectedIndustries] = useState<string[]>([]);
+  const [selectedIndustries, setSelectedIndustries] = useState<string[]>([
+    ...acquisitionTargetPreset.industryCodes,
+  ]);
   const [industryQuery, setIndustryQuery] = useState("");
-  const [selectedStates, setSelectedStates] = useState<string[]>([]);
+  const [selectedStates, setSelectedStates] = useState<string[]>([
+    ...acquisitionTargetPreset.states,
+  ]);
+  const [selectedLegalForms, setSelectedLegalForms] = useState<string[]>([
+    ...acquisitionTargetPreset.legalForms,
+  ]);
+  const [requireReportedEbitda, setRequireReportedEbitda] = useState(false);
   const [advancedFinancials, setAdvancedFinancials] = useState(false);
   const dailyCost = useMemo(
     () =>
@@ -63,7 +79,7 @@ export function SearchBuilder() {
 
   function requestBody(runNow: boolean) {
     const form = formRef.current;
-    if (!form) throw new Error("Search form is unavailable");
+    if (!form) throw new Error("Das Suchformular ist nicht verfügbar.");
     const data = new FormData(form);
     const filters: Array<{
       field: string;
@@ -71,9 +87,9 @@ export function SearchBuilder() {
       min?: string;
       max?: string;
       values?: string[];
-    }> = [
-      { field: "legal_form", value: String(data.get("legal_form") ?? "gmbh") },
-    ];
+      keywords?: string[];
+    }> = [];
+    filters.push({ field: "legal_form", values: selectedLegalForms });
     const status = String(data.get("status") ?? "active");
     if (status !== "all") filters.unshift({ field: "status", value: status });
     if (selectedIndustries.length)
@@ -81,6 +97,12 @@ export function SearchBuilder() {
     const registerCourts = registerCourtsForStates(selectedStates);
     if (registerCourts.length)
       filters.push({ field: "register_court", values: registerCourts });
+    const purposeKeywords = String(data.get("purpose_keywords") ?? "")
+      .split(",")
+      .map((keyword) => keyword.trim())
+      .filter(Boolean);
+    if (purposeKeywords.length)
+      filters.push({ field: "purpose", keywords: purposeKeywords });
 
     const ranges = [
       ["employees", "plain"],
@@ -91,6 +113,7 @@ export function SearchBuilder() {
       ["equity", "money"],
       ["financial_debt", "money"],
       ["balance_sheet_total", "money"],
+      ["youngest_owner_age", "plain"],
     ] as const;
     for (const [field, conversion] of ranges) {
       const rawMin = String(data.get(`${field}_min`) ?? "").trim();
@@ -117,23 +140,26 @@ export function SearchBuilder() {
         value: field === "has_open_insolvency" ? "false" : "true",
       });
     }
-    const legalForm = String(data.get("legal_form") ?? "gmbh").toUpperCase();
-    const industrySummary = selectedIndustries.length
-      ? ` in ${selectedIndustries
-          .map(
-            (code) =>
-              wz2025Industries.find((industry) => industry.code === code)?.name,
-          )
-          .filter(Boolean)
-          .join(", ")}`
-      : " across all industries";
-    const stateSummary = selectedStates.length
-      ? `, registered in ${selectedStates.join(", ")}`
-      : "";
+    const industryNames = selectedIndustries
+      .map(
+        (code) =>
+          wz2025Industries.find((industry) => industry.code === code)?.name,
+      )
+      .filter((name): name is string => Boolean(name));
+    const excludesOpenInsolvency = filters.some(
+      (filter) =>
+        filter.field === "has_open_insolvency" && filter.value === "false",
+    );
     return {
       name: String(data.get("name") ?? "").trim(),
       description: String(data.get("description") ?? "").trim(),
-      summary: `Active German ${legalForm} companies${industrySummary}${stateSummary}; unavailable fields remain N/A.`,
+      summary: describeAcquisitionPreset({
+        industryNames,
+        states: selectedStates,
+        legalForms: selectedLegalForms,
+        requireReportedEbitda,
+        excludeOpenInsolvency: excludesOpenInsolvency,
+      }),
       filters,
       hydrationMode: mode,
       dailyTarget,
@@ -147,7 +173,7 @@ export function SearchBuilder() {
     setBusy(true);
     setActiveAction("preview");
     setMessageTone("info");
-    setMessage("Checking the live OpenRegister count…");
+    setMessage("Live-Trefferzahl bei OpenRegister wird geprüft…");
     try {
       const body = requestBody(false);
       const response = await fetch("/api/providers/openregister/search", {
@@ -159,16 +185,19 @@ export function SearchBuilder() {
         }),
       });
       const result = (await response.json()) as SearchApiResponse;
-      if (!response.ok) throw new Error(result.error ?? "Preview failed");
+      if (!response.ok)
+        throw new Error(result.error ?? "Vorschau fehlgeschlagen");
       const total =
         result.pagination?.total_results ?? result.pagination?.total ?? 0;
       setMessageTone("success");
       setMessage(
-        `${Number(total).toLocaleString()} matching companies reported by OpenRegister.`,
+        `${Number(total).toLocaleString("de-DE")} passende Unternehmen laut OpenRegister${selectedLegalForms.includes("kg") ? "; die genaue Firmierung als GmbH & Co. KG wird anschließend geprüft" : ""}.`,
       );
     } catch (error) {
       setMessageTone("error");
-      setMessage(error instanceof Error ? error.message : "Preview failed");
+      setMessage(
+        error instanceof Error ? error.message : "Vorschau fehlgeschlagen",
+      );
     } finally {
       setBusy(false);
       setActiveAction(null);
@@ -181,7 +210,11 @@ export function SearchBuilder() {
     setBusy(true);
     setActiveAction(runNow ? "run" : "save");
     setMessageTone("info");
-    setMessage(runNow ? "Running OpenRegister search…" : "Saving search…");
+    setMessage(
+      runNow
+        ? "OpenRegister-Suche wird ausgeführt…"
+        : "Suche wird gespeichert…",
+    );
     try {
       const response = await fetch("/api/searches", {
         method: "POST",
@@ -190,11 +223,13 @@ export function SearchBuilder() {
       });
       const result = (await response.json()) as SearchApiResponse;
       if (!response.ok)
-        throw new Error(result.error ?? "Unable to save search");
+        throw new Error(
+          result.error ?? "Suche konnte nicht gespeichert werden.",
+        );
       setMessage(
         result.run
-          ? `Run complete: ${result.run.accepted} new, ${result.run.duplicates} already present; ${result.run.enrichmentCalls} enrichment calls recorded (${result.run.creditsUsed} credits).`
-          : "Search saved as a draft.",
+          ? `Lauf abgeschlossen: ${result.run.accepted} neu, ${result.run.duplicates} bereits vorhanden; ${result.run.enrichmentCalls} Anreicherungsaufrufe erfasst (${result.run.creditsUsed} Credits).`
+          : "Suche als Entwurf gespeichert.",
       );
       setMessageTone("success");
       setOpen(false);
@@ -202,7 +237,9 @@ export function SearchBuilder() {
     } catch (error) {
       setMessageTone("error");
       setMessage(
-        error instanceof Error ? error.message : "Search setup failed",
+        error instanceof Error
+          ? error.message
+          : "Suche konnte nicht eingerichtet werden.",
       );
     } finally {
       setBusy(false);
@@ -212,10 +249,11 @@ export function SearchBuilder() {
   return (
     <div className="flex flex-col items-start gap-2 md:items-end">
       <button
+        type="button"
         onClick={() => setOpen(true)}
         className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#13201d] px-4 text-sm font-medium text-white"
       >
-        <Plus size={15} /> New saved search
+        <Plus size={15} /> {triggerLabel}
       </button>
       {message && !open && (
         <p className="max-w-sm text-xs leading-5 text-[#4f655e]">{message}</p>
@@ -225,7 +263,7 @@ export function SearchBuilder() {
           className="fixed inset-0 z-50 flex justify-end bg-[#101b18]/45"
           role="dialog"
           aria-modal="true"
-          aria-label="Create saved search"
+          aria-label="Gespeicherte Suche erstellen"
         >
           <form
             ref={formRef}
@@ -235,55 +273,63 @@ export function SearchBuilder() {
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#d9d6ce] bg-[#f8f7f3]/95 px-6 py-5 backdrop-blur">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[.14em] text-[#16856b]">
-                  Search builder
+                  Suchkonfiguration
                 </p>
                 <h2 className="mt-1 text-xl font-semibold">
-                  New acquisition search
+                  Neue Akquisitionssuche
                 </h2>
               </div>
               <button
                 onClick={() => setOpen(false)}
                 className="rounded-lg border border-[#d6d3cb] bg-white px-3 py-2 text-xs"
               >
-                Close
+                Schließen
               </button>
             </div>
             <div className="space-y-6 p-6">
-              <Section title="Search identity">
+              <Section title="Suchangaben">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Search name">
+                  <Field label="Name der Suche">
                     <input
                       name="name"
-                      defaultValue="German industrial targets"
+                      defaultValue={acquisitionTargetPreset.name}
                       required
                     />
                   </Field>
-                  <Field label="Description">
+                  <Field label="Beschreibung">
                     <input
                       name="description"
-                      placeholder="Optional investment thesis context"
+                      defaultValue={acquisitionTargetPreset.description}
                     />
                   </Field>
                 </div>
               </Section>
-              <Section title="Company profile">
+              <Section title="Unternehmensprofil">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Status">
+                  <Field label="Unternehmensstatus">
                     <select name="status" defaultValue="active">
-                      <option value="active">Active companies only</option>
-                      <option value="all">Active and inactive</option>
-                    </select>
-                  </Field>
-                  <Field label="Legal forms">
-                    <select name="legal_form" defaultValue="gmbh">
-                      <option value="gmbh">GmbH</option>
-                      <option value="ag">AG</option>
-                      <option value="ug">UG (haftungsbeschränkt)</option>
+                      <option value="active">Nur aktive Unternehmen</option>
+                      <option value="all">
+                        Aktive und inaktive Unternehmen
+                      </option>
                     </select>
                   </Field>
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[.1em] text-[#6b7671]">
-                      Industries
+                      Rechtsformen
+                    </p>
+                    <LegalFormSelector
+                      selected={selectedLegalForms}
+                      onSelectedChange={setSelectedLegalForms}
+                    />
+                    <p className="mt-2 text-xs leading-5 text-[#7a8580]">
+                      OpenRegister führt GmbH &amp; Co. KG unter der Rechtsform
+                      KG. Die genaue Firmierung wird nach der Suche geprüft.
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[.1em] text-[#6b7671]">
+                      WZ-2025-Branchen
                     </p>
                     <IndustrySelector
                       query={industryQuery}
@@ -292,58 +338,94 @@ export function SearchBuilder() {
                       onSelectedChange={setSelectedIndustries}
                     />
                     <p className="mt-2 text-xs leading-5 text-[#7a8580]">
-                      Select industries by name. The required WZ 2025 codes are
-                      added behind the scenes.
+                      Branchen werden nach Namen ausgewählt. Die erforderlichen
+                      WZ-2025-Codes werden im Hintergrund übermittelt.
                     </p>
                   </div>
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[.1em] text-[#6b7671]">
-                      Location
+                      Standort
                     </p>
                     <StateSelector
                       selected={selectedStates}
                       onSelectedChange={setSelectedStates}
                     />
                     <p className="mt-2 text-xs leading-5 text-[#7a8580]">
-                      Germany is fixed. Selected states are matched through
-                      their current register courts.
+                      Deutschland ist fest vorgegeben. Bundesländer werden über
+                      die jeweils zuständigen Registergerichte zugeordnet.
                     </p>
                   </div>
                 </div>
               </Section>
-              <Section title="Size & financials">
+              <Section title="Größe & Finanzdaten">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Range field="employees" label="Employees" min="" max="" />
-                  <Range field="revenue" label="Revenue · EUR" min="" max="" />
-                  <Range field="ebitda" label="EBITDA · EUR" min="" max="" />
+                  <Range field="employees" label="Beschäftigte" min="" max="" />
+                  <Range
+                    field="revenue"
+                    label="Umsatz · EUR"
+                    min={acquisitionTargetPreset.revenueEur.min}
+                    max={acquisitionTargetPreset.revenueEur.max}
+                  />
+                  <Range
+                    field="ebitda"
+                    label="EBITDA · EUR"
+                    min={acquisitionTargetPreset.preferredEbitdaEur.min}
+                    max={acquisitionTargetPreset.preferredEbitdaEur.max}
+                    disabled={!requireReportedEbitda}
+                  />
                   <Range
                     field="incorporated_at"
-                    label="Incorporated"
+                    label="Gründungsdatum"
                     min=""
                     max=""
                     type="date"
                   />
                 </div>
+                <label className="mt-4 flex items-start gap-3 rounded-lg border border-[#d9e4df] bg-white p-3 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={requireReportedEbitda}
+                    onChange={(event) =>
+                      setRequireReportedEbitda(event.target.checked)
+                    }
+                  />
+                  <span>
+                    <span className="block font-semibold">
+                      Gemeldetes EBITDA zwischen 2 Mio. € und 5 Mio. €
+                      voraussetzen
+                    </span>
+                    <span className="mt-1 block leading-5 text-[#6f7b76]">
+                      Standardmäßig deaktiviert. Der Umsatzbereich von 10–50
+                      Mio. € unterstellt eine EBITDA-Marge von 10–20 % und
+                      schließt Unternehmen ohne gemeldetes EBITDA nicht aus.
+                    </span>
+                  </span>
+                </label>
                 {advancedFinancials && (
                   <div className="mt-4 grid gap-4 rounded-xl border border-[#d9e4df] bg-[#f2f7f4] p-4 sm:grid-cols-2">
                     <Range field="ebit" label="EBIT · EUR" min="" max="" />
-                    <Range field="equity" label="Equity · EUR" min="" max="" />
+                    <Range
+                      field="equity"
+                      label="Eigenkapital · EUR"
+                      min=""
+                      max=""
+                    />
                     <Range
                       field="financial_debt"
-                      label="Financial debt · EUR"
+                      label="Finanzverbindlichkeiten · EUR"
                       min=""
                       max=""
                     />
                     <Range
                       field="balance_sheet_total"
-                      label="Balance sheet total · EUR"
+                      label="Bilanzsumme · EUR"
                       min=""
                       max=""
                     />
                     <p className="sm:col-span-2 text-xs leading-4 text-[#6f7b76]">
-                      Documented OpenRegister range fields: ebit, equity,
-                      financial_debt, and balance_sheet_total. EUR inputs are
-                      converted to integer cents before the API request.
+                      Verfügbare OpenRegister-Felder: EBIT, Eigenkapital,
+                      Finanzverbindlichkeiten und Bilanzsumme. EUR-Beträge
+                      werden vor der API-Abfrage in Cent umgerechnet.
                     </p>
                   </div>
                 )}
@@ -353,17 +435,22 @@ export function SearchBuilder() {
                   aria-expanded={advancedFinancials}
                   className="mt-4 text-xs font-semibold text-[#16856b]"
                 >
-                  {advancedFinancials ? "− Hide" : "+ Advanced"} financials
-                  (EBIT, equity, debt…)
+                  {advancedFinancials
+                    ? "− Erweiterte Finanzdaten ausblenden"
+                    : "+ Erweiterte Finanzdaten (EBIT, Eigenkapital, Schulden…)"}
                 </button>
               </Section>
-              <Section title="Ownership & risk">
+              <Section title="Eigentümerstruktur & Risiko">
                 <div className="grid gap-3 sm:grid-cols-2">
                   {[
-                    ["Owner-managed", "has_representative_owner", true],
-                    ["Family-owned", "is_family_owned", true],
-                    ["Exclude open insolvency", "has_open_insolvency", false],
-                    ["Sole owner", "has_sole_owner", true],
+                    ["Inhabergeführt", "has_representative_owner", true],
+                    ["Familiengeführt", "is_family_owned", true],
+                    [
+                      "Laufende Insolvenz ausschließen",
+                      "has_open_insolvency",
+                      false,
+                    ],
+                    ["Alleineigentümer", "has_sole_owner", true],
                   ].map(([label, field, enterprise], index) => (
                     <label
                       key={String(label)}
@@ -386,16 +473,41 @@ export function SearchBuilder() {
                       </span>
                       {enterprise && (
                         <span className="ml-auto rounded bg-[#fff2c8] px-1.5 py-1 text-xs font-semibold text-[#6f581e]">
-                          Enterprise
+                          Enterprise-Tarif
                         </span>
                       )}
                     </label>
                   ))}
                 </div>
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <Field label="Mindestalter des jüngsten Eigentümers">
+                    <input
+                      name="youngest_owner_age_min"
+                      type="number"
+                      min={18}
+                      max={100}
+                      placeholder="Keine Einschränkung"
+                    />
+                  </Field>
+                  <Field label="Unternehmensgegenstand · eines der Stichwörter">
+                    <input
+                      name="purpose_keywords"
+                      placeholder={acquisitionTargetPreset.purposeKeywordSuggestions.join(
+                        ", ",
+                      )}
+                    />
+                  </Field>
+                </div>
+                <p className="mt-3 text-xs leading-5 text-[#7a8580]">
+                  Eigentümeralter und Eigentümermerkmale bleiben optional, da
+                  diese Suchfilter laut Dokumentation den Enterprise-Tarif
+                  erfordern. Im Pro-Tarif können sie nach der
+                  Eigentümeranreicherung abgeleitet werden.
+                </p>
               </Section>
-              <Section title="Hydration & schedule">
+              <Section title="Datenumfang & Zeitplan">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Daily target">
+                  <Field label="Tägliches Ziel">
                     <input
                       type="number"
                       min={1}
@@ -411,76 +523,82 @@ export function SearchBuilder() {
                       }
                     />
                   </Field>
-                  <Field label="Hydration mode">
+                  <Field label="Datenumfang">
                     <select
                       value={mode}
                       onChange={(event) =>
                         setMode(event.target.value as typeof mode)
                       }
                     >
-                      <option value="lean">Lean · details only</option>
+                      <option value="lean">Kompakt · nur Stammdaten</option>
                       <option value="full">
-                        Full · details, financials, owners
+                        Vollständig · Stammdaten, Finanzdaten, Eigentümer
                       </option>
                     </select>
                   </Field>
-                  <Field label="Schedule">
+                  <Field label="Ausführungszeit">
                     <input
                       name="schedule_time"
                       type="time"
                       defaultValue="06:30"
                     />
                   </Field>
-                  <Field label="Timezone">
+                  <Field label="Zeitzone">
                     <input value="Europe/Berlin" readOnly />
                   </Field>
                 </div>
                 <label className="mt-4 flex items-center gap-3 rounded-lg border border-[#d9e4df] bg-white p-3 text-xs font-semibold">
                   <input name="active" type="checkbox" />
-                  Activate the daily schedule after saving
+                  Täglichen Zeitplan nach dem Speichern aktivieren
                 </label>
               </Section>
               <div className="rounded-xl border border-[#b8d8ce] bg-[#eaf5f1] p-4">
                 <p className="text-xs font-semibold uppercase tracking-[.12em] text-[#24735f]">
-                  Plain-language summary
+                  Zusammenfassung
                 </p>
                 <p className="mt-2 text-sm leading-6">
-                  The summary is generated from the filters you select. Missing
-                  provider fields remain N/A and are never filled with dummy
-                  data.
+                  Klima- und Lüftungstechnik einschließlich Installation sowie
+                  Dachdeckerei; Berlin, Brandenburg, Bayern, Nordrhein-Westfalen
+                  und Baden-Württemberg; GmbH- und KG-Kandidaten; 10–50 Mio. €
+                  Umsatz; laufende Insolvenzen ausgeschlossen. Ein EBITDA von
+                  2–5 Mio. € ist eine Präferenz, sofern es oben nicht
+                  ausdrücklich vorausgesetzt wird.
                 </p>
               </div>
               <div className="rounded-xl bg-[#172521] p-5 text-white">
                 <div className="flex items-start justify-between">
                   <div>
                     <p className="text-xs font-semibold">
-                      Estimated provider usage
+                      Geschätzte Anbieternutzung
                     </p>
                     <p className="mt-1 text-xs text-white/45">
-                      Configured rates; actual usage is recorded per job.
+                      Konfigurierte Tarife; tatsächliche Nutzung wird je Auftrag
+                      erfasst.
                     </p>
                   </div>
                   <Calculator size={18} className="text-[#54d5b3]" />
                 </div>
                 <div className="mt-5 grid grid-cols-2 gap-4">
                   <div>
-                    <p className="text-xs text-white/45">Per scheduled run</p>
+                    <p className="text-xs text-white/45">
+                      Je geplanter Ausführung
+                    </p>
                     <p className="mt-1 text-2xl font-semibold tabular-nums">
-                      {dailyCost.toLocaleString()} cr
+                      {dailyCost.toLocaleString("de-DE")} Credits
                     </p>
                   </div>
                   <div>
                     <p className="text-xs text-white/45">
-                      Monthly estimate · 30 days
+                      Monatliche Schätzung · 30 Tage
                     </p>
                     <p className="mt-1 text-2xl font-semibold tabular-nums">
-                      {(dailyCost * 30).toLocaleString()} cr
+                      {(dailyCost * 30).toLocaleString("de-DE")} Credits
                     </p>
                   </div>
                 </div>
                 <p className="mt-4 text-xs leading-4 text-white/45">
-                  Preview count is not run automatically. Clicking Preview count
-                  spends {providerCosts.search} credits.
+                  Die Treffervorschau läuft nicht automatisch. Ein Klick darauf
+                  verbraucht {providerCosts.search} Credits.
                 </p>
               </div>
             </div>
@@ -512,8 +630,8 @@ export function SearchBuilder() {
                   <Search size={14} />
                 )}
                 {activeAction === "preview"
-                  ? "Checking live count…"
-                  : "Preview count · 10 credits"}
+                  ? "Live-Trefferzahl wird geprüft…"
+                  : "Trefferzahl prüfen · 10 Credits"}
               </button>
               <div className="flex gap-2">
                 <button
@@ -527,7 +645,7 @@ export function SearchBuilder() {
                   ) : (
                     <Save size={14} />
                   )}{" "}
-                  Save draft
+                  Entwurf speichern
                 </button>
                 <button
                   type="button"
@@ -540,7 +658,7 @@ export function SearchBuilder() {
                   ) : (
                     <CalendarClock size={14} />
                   )}{" "}
-                  Save & run now
+                  Speichern & jetzt ausführen
                 </button>
               </div>
             </div>
@@ -563,10 +681,10 @@ function IndustrySelector({
   onSelectedChange: (value: string[]) => void;
 }) {
   const filteredIndustries = useMemo(() => {
-    const term = query.trim().toLocaleLowerCase("en");
+    const term = query.trim().toLocaleLowerCase("de");
     if (!term) return wz2025Industries;
     return wz2025Industries.filter((industry) =>
-      industry.name.toLocaleLowerCase("en").includes(term),
+      industry.name.toLocaleLowerCase("de").includes(term),
     );
   }, [query]);
   const selectedSet = new Set(selected);
@@ -575,8 +693,8 @@ function IndustrySelector({
       <summary className="form-control flex cursor-pointer list-none items-center justify-between text-sm font-normal normal-case tracking-normal marker:hidden">
         <span className={selected.length ? "text-[#27332f]" : "text-[#7a8580]"}>
           {selected.length
-            ? `${selected.length} industr${selected.length === 1 ? "y" : "ies"} selected`
-            : "Select industries by name"}
+            ? `${selected.length} ${selected.length === 1 ? "Branche" : "Branchen"} ausgewählt`
+            : "Branchen nach Namen auswählen"}
         </span>
         <ChevronDown size={16} className="transition group-open:rotate-180" />
       </summary>
@@ -585,8 +703,8 @@ function IndustrySelector({
           type="search"
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
-          placeholder="Search e.g. electronics, engineering…"
-          aria-label="Search industries by name"
+          placeholder="Suchen, z. B. Elektronik, Maschinenbau …"
+          aria-label="Branchen nach Namen durchsuchen"
           className="form-control"
         />
         <div className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-[#ebe8e1]">
@@ -616,7 +734,7 @@ function IndustrySelector({
             })
           ) : (
             <p className="p-4 text-sm text-[#7a8580]">
-              No industry name matches that search.
+              Keine Branche entspricht dieser Suche.
             </p>
           )}
         </div>
@@ -626,7 +744,7 @@ function IndustrySelector({
             onClick={() => onSelectedChange([])}
             className="mt-2 text-xs font-semibold text-[#087b62]"
           >
-            Clear selected industries
+            Auswahl löschen
           </button>
         ) : null}
       </div>
@@ -646,7 +764,7 @@ function StateSelector({
     <details className="group relative mt-2">
       <summary className="form-control flex cursor-pointer list-none items-center justify-between text-sm font-normal normal-case tracking-normal marker:hidden">
         <span className={selected.length ? "text-[#27332f]" : "text-[#7a8580]"}>
-          {selected.length ? selected.join(", ") : "All German states"}
+          {selected.length ? selected.join(", ") : "Alle Bundesländer"}
         </span>
         <ChevronDown
           size={16}
@@ -679,6 +797,46 @@ function StateSelector({
         })}
       </div>
     </details>
+  );
+}
+
+function LegalFormSelector({
+  selected,
+  onSelectedChange,
+}: {
+  selected: string[];
+  onSelectedChange: (value: string[]) => void;
+}) {
+  const options = [
+    { value: "gmbh", label: "GmbH" },
+    { value: "kg", label: "GmbH-&-Co.-KG-Kandidaten" },
+  ];
+  return (
+    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+      {options.map((option) => {
+        const checked = selected.includes(option.value);
+        return (
+          <label
+            key={option.value}
+            className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#dfdcd4] bg-white px-3 py-2.5 text-sm font-normal normal-case tracking-normal"
+          >
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={() => {
+                if (checked && selected.length === 1) return;
+                onSelectedChange(
+                  checked
+                    ? selected.filter((value) => value !== option.value)
+                    : [...selected, option.value],
+                );
+              }}
+            />
+            <span>{option.label}</span>
+          </label>
+        );
+      })}
+    </div>
   );
 }
 
@@ -718,12 +876,14 @@ function Range({
   min,
   max,
   type = "number",
+  disabled = false,
 }: {
   field: string;
   label: string;
   min: string;
   max: string;
   type?: string;
+  disabled?: boolean;
 }) {
   return (
     <div>
@@ -734,17 +894,19 @@ function Range({
         <input
           name={`${field}_min`}
           className="form-control"
-          aria-label={`${label} minimum`}
+          aria-label={`${label} Minimum`}
           type={type}
           defaultValue={min}
+          disabled={disabled}
           placeholder="Minimum"
         />
         <input
           name={`${field}_max`}
           className="form-control"
-          aria-label={`${label} maximum`}
+          aria-label={`${label} Maximum`}
           type={type}
           defaultValue={max}
+          disabled={disabled}
           placeholder="Maximum"
         />
       </div>
@@ -775,7 +937,7 @@ export function SearchCard({
             <span
               className={`rounded-full px-2 py-1 text-xs font-semibold ${isActive ? "bg-[#e0f2ec] text-[#236a58]" : "bg-[#eceae5] text-[#717a76]"}`}
             >
-              {isActive ? "Active" : "Paused"}
+              {isActive ? "Aktiv" : "Pausiert"}
             </span>
           </div>
           <p className="mt-3 max-w-xl text-xs leading-5 text-[#68736e]">
@@ -784,7 +946,7 @@ export function SearchCard({
         </div>
         <button
           onClick={() => setIsActive((value) => !value)}
-          aria-label={isActive ? "Pause schedule" : "Resume schedule"}
+          aria-label={isActive ? "Zeitplan pausieren" : "Zeitplan fortsetzen"}
           className="grid size-9 place-items-center rounded-lg border border-[#d7d4cc] bg-white"
         >
           {isActive ? <CirclePause size={15} /> : <Play size={15} />}
@@ -792,20 +954,20 @@ export function SearchCard({
       </div>
       <div className="mt-5 grid grid-cols-3 gap-4 border-t border-[#e3e0d8] pt-4 text-xs">
         <div>
-          <p className="text-[#84908b]">Last run</p>
+          <p className="text-[#84908b]">Letzter Lauf</p>
           <p className="mt-1 font-semibold">{lastRun}</p>
         </div>
         <div>
-          <p className="text-[#84908b]">New accepted</p>
+          <p className="text-[#84908b]">Neu übernommen</p>
           <p className="mt-1 font-semibold tabular-nums">{accepted}</p>
         </div>
         <div>
-          <p className="text-[#84908b]">Mode</p>
-          <p className="mt-1 font-semibold">Lean · 420 cr/day</p>
+          <p className="text-[#84908b]">Modus</p>
+          <p className="mt-1 font-semibold">Kompakt · 420 Credits/Tag</p>
         </div>
       </div>
       <button className="mt-4 flex items-center gap-2 text-xs font-semibold text-[#087b62]">
-        <Play size={12} /> Run now
+        <Play size={12} /> Jetzt ausführen
       </button>
     </article>
   );

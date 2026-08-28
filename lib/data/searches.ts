@@ -14,10 +14,21 @@ export type StoredSearch = {
   lastAccepted: number | null;
 };
 
-export async function listSavedSearches(workspaceId: string): Promise<StoredSearch[]> {
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || (!process.env.SUPABASE_SECRET_KEY && !process.env.SUPABASE_SERVER_ACCESS_TOKEN)) return [];
+export async function listSavedSearches(
+  workspaceId: string,
+): Promise<StoredSearch[]> {
+  if (
+    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    (!process.env.SUPABASE_SECRET_KEY &&
+      !process.env.SUPABASE_SERVER_ACCESS_TOKEN)
+  )
+    return [];
   const supabase = createAdminClient();
-  const { data, error } = await supabase.from("saved_searches").select("id,name,plain_language_summary,active,hydration_mode,updated_at").eq("workspace_id", workspaceId).order("updated_at", { ascending: false });
+  const { data, error } = await supabase
+    .from("saved_searches")
+    .select("id,name,plain_language_summary,active,hydration_mode,updated_at")
+    .eq("workspace_id", workspaceId)
+    .order("updated_at", { ascending: false });
   if (error) throw new Error(`Unable to load saved searches: ${error.message}`);
   const searchIds = (data ?? []).map((row) => row.id);
   const { data: runs, error: runsError } = searchIds.length
@@ -27,10 +38,12 @@ export async function listSavedSearches(workspaceId: string): Promise<StoredSear
         .in("saved_search_id", searchIds)
         .order("started_at", { ascending: false })
     : { data: [], error: null };
-  if (runsError) throw new Error(`Unable to load search history: ${runsError.message}`);
+  if (runsError)
+    throw new Error(`Unable to load search history: ${runsError.message}`);
   const latestRun = new Map<string, (typeof runs)[number]>();
   for (const run of runs ?? []) {
-    if (!latestRun.has(run.saved_search_id)) latestRun.set(run.saved_search_id, run);
+    if (!latestRun.has(run.saved_search_id))
+      latestRun.set(run.saved_search_id, run);
   }
   return (data ?? []).map((row) => {
     const run = latestRun.get(row.id);

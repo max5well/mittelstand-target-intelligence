@@ -27,7 +27,7 @@ export function MfaFlow() {
           friendlyName: "Unternehmen admin TOTP",
         });
       if (enrollError) {
-        setError("Unable to enroll TOTP.");
+        setError("TOTP konnte nicht eingerichtet werden.");
         return;
       }
       setFactorId(enrolled.id);
@@ -37,13 +37,13 @@ export function MfaFlow() {
   async function verify(formData: FormData) {
     const supabase = createBrowserSupabaseClient();
     if (!supabase || !factorId) {
-      setError("MFA is not ready.");
+      setError("MFA ist noch nicht bereit.");
       return;
     }
     const { data: challenge, error: challengeError } =
       await supabase.auth.mfa.challenge({ factorId });
     if (challengeError) {
-      setError("Unable to start verification.");
+      setError("Die Überprüfung konnte nicht gestartet werden.");
       return;
     }
     const { error: verifyError } = await supabase.auth.mfa.verify({
@@ -52,7 +52,7 @@ export function MfaFlow() {
       code: String(formData.get("code")),
     });
     if (verifyError) {
-      setError("The code was not accepted.");
+      setError("Der Code wurde nicht akzeptiert.");
       return;
     }
     router.push("/overview");
@@ -64,19 +64,19 @@ export function MfaFlow() {
         <div className="mb-5 rounded-lg border border-[#d8d5cd] bg-white p-3 text-center">
           <Image
             src={qr}
-            alt="Scan this TOTP QR code in your authenticator"
+            alt="Diesen TOTP-QR-Code mit der Authenticator-App scannen"
             width={176}
             height={176}
             unoptimized
             className="mx-auto size-44"
           />
           <p className="mt-2 text-xs text-[#69736f]">
-            Scan once, then enter the current code below.
+            Einmal scannen und anschließend den aktuellen Code eingeben.
           </p>
         </div>
       )}
       <label className="text-xs font-semibold uppercase tracking-[.1em] text-[#66716d]">
-        6-digit code
+        6-stelliger Code
         <input
           name="code"
           className="form-control mt-2 text-center text-lg tracking-[.35em]"
@@ -96,7 +96,7 @@ export function MfaFlow() {
         disabled={!factorId}
         className="mt-4 h-11 w-full rounded-lg bg-[#13201d] text-sm font-semibold text-white disabled:opacity-50"
       >
-        Verify code
+        Code bestätigen
       </button>
     </form>
   );

@@ -58,7 +58,12 @@ export async function runOpenRegisterEnrichment(input: {
       .order("completed_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (previous) return { job: previous, skipped: true, available: asRecord(previous.payload).available !== false };
+    if (previous)
+      return {
+        job: previous,
+        skipped: true,
+        available: asRecord(previous.payload).available !== false,
+      };
   }
 
   const startedAt = new Date();
@@ -80,7 +85,8 @@ export async function runOpenRegisterEnrichment(input: {
     })
     .select("id")
     .single();
-  if (jobError || !job) throw new Error(jobError?.message ?? "Unable to create enrichment job");
+  if (jobError || !job)
+    throw new Error(jobError?.message ?? "Unable to create enrichment job");
 
   let httpStatus = 200;
   try {
@@ -112,7 +118,12 @@ export async function runOpenRegisterEnrichment(input: {
     if (input.stage === "financials" && available)
       await persistFinancials(input.workspaceId, input.companyId, payload);
     if (input.stage === "owners" && available)
-      await persistOwners(input.workspaceId, input.companyId, payload, asRecord(company.raw_provider_payload));
+      await persistOwners(
+        input.workspaceId,
+        input.companyId,
+        payload,
+        asRecord(company.raw_provider_payload),
+      );
 
     const completedAt = new Date();
     const [jobResult] = await Promise.all([
@@ -155,7 +166,10 @@ export async function runOpenRegisterEnrichment(input: {
           actual_credits: cost,
           completed_at: completedAt.toISOString(),
           error_details: {
-            message: error instanceof Error ? error.message : "Unknown OpenRegister error",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Unknown OpenRegister error",
           },
         })
         .eq("id", job.id),
@@ -183,7 +197,11 @@ function endpointFor(stage: OpenRegisterStage) {
       : "GET /v1/company/:id/owners";
 }
 
-async function persistDetails(workspaceId: string, companyId: string, payload: JsonRecord) {
+async function persistDetails(
+  workspaceId: string,
+  companyId: string,
+  payload: JsonRecord,
+) {
   const supabase = createAdminClient();
   const now = new Date().toISOString();
   const name = asRecord(payload.name);
@@ -193,7 +211,9 @@ async function persistDetails(workspaceId: string, companyId: string, payload: J
   const purpose = asRecord(payload.purpose);
   const legalName = asText(name.name) ?? asText(payload.name);
   const website =
-    asText(contact.website_url) ?? asText(contact.website) ?? asText(contact.url);
+    asText(contact.website_url) ??
+    asText(contact.website) ??
+    asText(contact.url);
   const companyUpdate = {
     ...(legalName ? { legal_name: legalName } : {}),
     legal_form: asText(payload.legal_form),
@@ -212,11 +232,25 @@ async function persistDetails(workspaceId: string, companyId: string, payload: J
     .eq("workspace_id", workspaceId);
   if (updateError) throw new Error(updateError.message);
 
-  assertSupabaseResults(await Promise.all([
-    supabase.from("company_locations").delete().eq("company_id", companyId).eq("source_provider", "openregister"),
-    supabase.from("company_management").delete().eq("company_id", companyId).eq("source_provider", "openregister"),
-    supabase.from("company_names").delete().eq("company_id", companyId).eq("source_provider", "openregister"),
-  ]));
+  assertSupabaseResults(
+    await Promise.all([
+      supabase
+        .from("company_locations")
+        .delete()
+        .eq("company_id", companyId)
+        .eq("source_provider", "openregister"),
+      supabase
+        .from("company_management")
+        .delete()
+        .eq("company_id", companyId)
+        .eq("source_provider", "openregister"),
+      supabase
+        .from("company_names")
+        .delete()
+        .eq("company_id", companyId)
+        .eq("source_provider", "openregister"),
+    ]),
+  );
   const insertions: Array<PromiseLike<unknown>> = [];
   if (legalName)
     insertions.push(
@@ -248,18 +282,20 @@ async function persistDetails(workspaceId: string, companyId: string, payload: J
   const management = asRecords(payload.representation).flatMap((person) => {
     const fullName = asText(person.name);
     if (!fullName) return [];
-    return [{
-      workspace_id: workspaceId,
-      company_id: companyId,
-      full_name: fullName,
-      role: asText(person.role) ?? "Representative",
-      started_on: asText(person.start_date),
-      ended_on: asText(person.end_date),
-      source_provider: "openregister",
-      source_identifier: asText(person.id),
-      retrieved_at: now,
-      raw_payload: person,
-    }];
+    return [
+      {
+        workspace_id: workspaceId,
+        company_id: companyId,
+        full_name: fullName,
+        role: asText(person.role) ?? "Representative",
+        started_on: asText(person.start_date),
+        ended_on: asText(person.end_date),
+        source_provider: "openregister",
+        source_identifier: asText(person.id),
+        retrieved_at: now,
+        raw_payload: person,
+      },
+    ];
   });
   if (management.length)
     insertions.push(supabase.from("company_management").insert(management));
@@ -291,37 +327,45 @@ async function persistDetails(workspaceId: string, companyId: string, payload: J
     });
 }
 
-async function persistFinancials(workspaceId: string, companyId: string, payload: JsonRecord) {
+async function persistFinancials(
+  workspaceId: string,
+  companyId: string,
+  payload: JsonRecord,
+) {
   const supabase = createAdminClient();
   const now = new Date().toISOString();
   const rows = asRecords(payload.indicators).flatMap((indicator) => {
     const date = asText(indicator.date);
     if (!date) return [];
-    return [{
-      workspace_id: workspaceId,
-      company_id: companyId,
-      fiscal_period_end: date,
-      consolidated: Boolean(indicator.consolidated),
-      currency: "EUR",
-      revenue_cents: asNumber(indicator.revenue),
-      ebitda_cents: asNumber(indicator.ebitda),
-      ebit_cents: asNumber(indicator.ebit),
-      net_income_cents: asNumber(indicator.net_income),
-      equity_cents: asNumber(indicator.equity),
-      cash_cents: asNumber(indicator.cash),
-      debt_cents: asNumber(indicator.financial_debt),
-      total_assets_cents: asNumber(indicator.balance_sheet_total),
-      employees: asNumber(indicator.employees),
-      source_provider: "openregister",
-      source_identifier: asText(indicator.report_id),
-      retrieved_at: now,
-      raw_payload: indicator,
-    }];
+    return [
+      {
+        workspace_id: workspaceId,
+        company_id: companyId,
+        fiscal_period_end: date,
+        consolidated: Boolean(indicator.consolidated),
+        currency: "EUR",
+        revenue_cents: asNumber(indicator.revenue),
+        ebitda_cents: asNumber(indicator.ebitda),
+        ebit_cents: asNumber(indicator.ebit),
+        net_income_cents: asNumber(indicator.net_income),
+        equity_cents: asNumber(indicator.equity),
+        cash_cents: asNumber(indicator.cash),
+        debt_cents: asNumber(indicator.financial_debt),
+        total_assets_cents: asNumber(indicator.balance_sheet_total),
+        employees: asNumber(indicator.employees),
+        source_provider: "openregister",
+        source_identifier: asText(indicator.report_id),
+        retrieved_at: now,
+        raw_payload: indicator,
+      },
+    ];
   });
   if (rows.length) {
-    const { error } = await supabase.from("company_financial_periods").upsert(rows, {
-      onConflict: "company_id,fiscal_period_end,consolidated,source_provider",
-    });
+    const { error } = await supabase
+      .from("company_financial_periods")
+      .upsert(rows, {
+        onConflict: "company_id,fiscal_period_end,consolidated,source_provider",
+      });
     if (error) throw new Error(error.message);
     const { error: companyError } = await supabase
       .from("companies")
@@ -350,22 +394,24 @@ async function persistOwners(
   const rows = owners.flatMap((owner) => {
     const ownerName = asText(owner.name);
     if (!ownerName) return [];
-    return [{
-      workspace_id: workspaceId,
-      company_id: companyId,
-      owner_name: ownerName,
-      owner_type: asText(owner.type),
-      ownership_percent: asNumber(owner.percentage_share),
-      nominal_share_cents:
-        asNumber(owner.nominal_share) == null
-          ? null
-          : Math.round(asNumber(owner.nominal_share)! * 100),
-      best_available: Boolean(payload.best_available),
-      source_provider: "openregister",
-      source_identifier: asText(owner.id),
-      retrieved_at: now,
-      raw_payload: owner,
-    }];
+    return [
+      {
+        workspace_id: workspaceId,
+        company_id: companyId,
+        owner_name: ownerName,
+        owner_type: asText(owner.type),
+        ownership_percent: asNumber(owner.percentage_share),
+        nominal_share_cents:
+          asNumber(owner.nominal_share) == null
+            ? null
+            : Math.round(asNumber(owner.nominal_share)! * 100),
+        best_available: Boolean(payload.best_available),
+        source_provider: "openregister",
+        source_identifier: asText(owner.id),
+        retrieved_at: now,
+        raw_payload: owner,
+      },
+    ];
   });
   if (rows.length) {
     const { error } = await supabase.from("company_owners").insert(rows);
@@ -424,6 +470,8 @@ function assertSupabaseResults(results: unknown[]) {
   for (const result of results) {
     const error = asRecord(asRecord(result).error);
     if (Object.keys(error).length)
-      throw new Error(asText(error.message) ?? "Unable to persist OpenRegister data");
+      throw new Error(
+        asText(error.message) ?? "Unable to persist OpenRegister data",
+      );
   }
 }

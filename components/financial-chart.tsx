@@ -23,7 +23,7 @@ export function FinancialChart() {
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <div className="h-64 rounded-lg border border-[#e1ded6] bg-white p-4">
-        <p className="mb-4 text-xs font-semibold">Revenue & EBITDA · €m</p>
+        <p className="mb-4 text-xs font-semibold">Umsatz & EBITDA · Mio. €</p>
         <ResponsiveContainer width="100%" height="85%">
           <BarChart data={financials}>
             <CartesianGrid vertical={false} stroke="#eeeae2" />
@@ -41,7 +41,7 @@ export function FinancialChart() {
         </ResponsiveContainer>
       </div>
       <div className="h-64 rounded-lg border border-[#e1ded6] bg-white p-4">
-        <p className="mb-4 text-xs font-semibold">Reported employees</p>
+        <p className="mb-4 text-xs font-semibold">Gemeldete Beschäftigte</p>
         <ResponsiveContainer width="100%" height="85%">
           <LineChart data={financials}>
             <CartesianGrid vertical={false} stroke="#eeeae2" />

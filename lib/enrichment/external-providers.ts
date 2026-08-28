@@ -232,7 +232,9 @@ async function runWebsiteDiscovery(input: {
   const supabase = createAdminClient();
   const { data: company, error: companyError } = await supabase
     .from("companies")
-    .select("id,legal_name,website_url,openregister_company_id")
+    .select(
+      "id,legal_name,website_url,openregister_company_id,raw_provider_payload",
+    )
     .eq("workspace_id", input.workspaceId)
     .eq("id", input.companyId)
     .single();
@@ -247,7 +249,7 @@ async function runWebsiteDiscovery(input: {
 
   const { data: location } = await supabase
     .from("company_locations")
-    .select("city")
+    .select("address_line,postcode,city")
     .eq("workspace_id", input.workspaceId)
     .eq("company_id", input.companyId)
     .order("retrieved_at", { ascending: false })
@@ -304,24 +306,52 @@ async function runWebsiteDiscovery(input: {
       companyName: company.legal_name,
       city: location?.city ?? undefined,
     });
-    const candidate = selectOfficialWebsiteCandidate(
+    const profile = websiteVerificationProfile({
+      companyName: company.legal_name,
+      city: location?.city,
+      addressLine: location?.address_line,
+      postcode: location?.postcode,
+      rawProviderPayload: company.raw_provider_payload,
+    });
+    const candidates = selectOfficialWebsiteCandidates(
       company.legal_name,
       sources,
     );
+    const candidate =
+      candidates.find(
+        (item) => verifyOfficialWebsiteEvidence(profile, item.sources).matched,
+      ) ?? candidates[0];
     let verifiedWebsite: string | null = null;
+    let verification = "no_verified_match";
+    let evidenceSignals: WebsiteEvidenceSignal[] = [];
+    let lookupReturnedCompany = false;
     if (candidate) {
       lookupAttempted = true;
       try {
         const match = await new OpenRegisterProvider().lookupCompanyByUrl(
           candidate.url,
         );
-        if (match.company_id === company.openregister_company_id)
+        lookupReturnedCompany = true;
+        if (match.company_id === company.openregister_company_id) {
           verifiedWebsite = candidate.url;
+          verification = "openregister_company_id_match";
+        }
       } catch (error) {
         if (error instanceof ProviderError && error.status === 404) {
           lookupStatus = 404;
         } else {
           throw error;
+        }
+      }
+      if (!verifiedWebsite && !lookupReturnedCompany) {
+        const evidenceMatch = verifyOfficialWebsiteEvidence(
+          profile,
+          candidate.sources,
+        );
+        evidenceSignals = evidenceMatch.signals;
+        if (evidenceMatch.matched) {
+          verifiedWebsite = candidate.url;
+          verification = "openregister_profile_evidence_match";
         }
       }
     }
@@ -339,7 +369,7 @@ async function runWebsiteDiscovery(input: {
         input.workspaceId,
         input.companyId,
         company.legal_name,
-        sources.filter((source) => source.url.startsWith(verifiedWebsite!)),
+        candidate?.sources ?? [],
       );
     }
 
@@ -385,9 +415,8 @@ async function runWebsiteDiscovery(input: {
             available,
             returned: available ? 1 : 0,
             website: verifiedWebsite,
-            verification: verifiedWebsite
-              ? "openregister_company_id_match"
-              : "no_verified_match",
+            verification,
+            evidenceSignals,
           },
         })
         .eq("id", job.id)
@@ -455,7 +484,14 @@ async function runWebsiteDiscovery(input: {
 }
 
 const NON_OFFICIAL_HOSTS = new Set([
+  "11880.com",
+  "arzt-auskunft.de",
   "companyhouse.de",
+  "dasoertliche.de",
+  "dastelefonbuch.de",
+  "doctolib.de",
+  "gelbeseiten.de",
+  "handelsregister.ai",
   "northdata.de",
   "openregister.de",
   "handelsregister.de",
@@ -465,13 +501,38 @@ const NON_OFFICIAL_HOSTS = new Set([
   "xing.com",
   "facebook.com",
   "instagram.com",
+  "jameda.de",
+  "total-lokal.de",
+  "werkenntdenbesten.de",
   "wikipedia.org",
 ]);
 
-export function selectOfficialWebsiteCandidate(
+type OfficialWebsiteCandidate = {
+  url: string;
+  source: WebSource;
+  sources: WebSource[];
+};
+
+export type WebsiteEvidenceSignal =
+  | "company_name"
+  | "city"
+  | "street_address"
+  | "postcode"
+  | "representative";
+
+export type WebsiteVerificationProfile = {
+  companyName: string;
+  city?: string | null;
+  addressLine?: string | null;
+  postcode?: string | null;
+  representatives?: string[];
+};
+
+export function selectOfficialWebsiteCandidates(
   companyName: string,
   sources: WebSource[],
-) {
+): OfficialWebsiteCandidate[] {
+  const candidates = new Map<string, OfficialWebsiteCandidate>();
   for (const source of sources) {
     if (!isRelevantTavilySource(companyName, source)) continue;
     try {
@@ -483,12 +544,66 @@ export function selectOfficialWebsiteCandidate(
         )
       )
         continue;
-      return { source, url: `${parsed.protocol}//${parsed.host}` };
+      const url = `${parsed.protocol}//${parsed.host}`;
+      const existing = candidates.get(url);
+      if (existing) existing.sources.push(source);
+      else candidates.set(url, { url, source, sources: [source] });
     } catch {
       continue;
     }
   }
-  return null;
+  return [...candidates.values()];
+}
+
+export function selectOfficialWebsiteCandidate(
+  companyName: string,
+  sources: WebSource[],
+) {
+  const candidate = selectOfficialWebsiteCandidates(companyName, sources)[0];
+  return candidate ? { source: candidate.source, url: candidate.url } : null;
+}
+
+export function verifyOfficialWebsiteEvidence(
+  profile: WebsiteVerificationProfile,
+  sources: WebSource[],
+) {
+  const evidence = normalizeCompanyText(
+    sources
+      .map((source) => `${source.title ?? ""} ${source.content}`)
+      .join(" "),
+  );
+  const addressEvidence = normalizeGermanAddress(evidence);
+  const companyStem = companyNameStem(profile.companyName);
+  const signals: WebsiteEvidenceSignal[] = [];
+  if (companyStem.length >= 5 && evidence.includes(companyStem))
+    signals.push("company_name");
+  if (profile.city && evidence.includes(normalizeCompanyText(profile.city)))
+    signals.push("city");
+  if (
+    profile.addressLine &&
+    addressEvidence.includes(normalizeGermanAddress(profile.addressLine))
+  )
+    signals.push("street_address");
+  if (
+    profile.postcode &&
+    new RegExp(`(?:^| )${escapeRegExp(profile.postcode)}(?: |$)`).test(evidence)
+  )
+    signals.push("postcode");
+  if (
+    profile.representatives?.some((name) => {
+      const normalized = normalizeCompanyText(name);
+      return normalized.length >= 5 && evidence.includes(normalized);
+    })
+  )
+    signals.push("representative");
+
+  const strongSignals = signals.filter((signal) =>
+    ["street_address", "postcode", "representative"].includes(signal),
+  );
+  return {
+    matched: signals.includes("company_name") && strongSignals.length >= 2,
+    signals,
+  };
 }
 
 async function persistWebSources(
@@ -525,12 +640,7 @@ async function persistWebSources(
 }
 
 export function isRelevantTavilySource(companyName: string, source: WebSource) {
-  const companyStem = normalizeCompanyText(
-    companyName.replace(
-      /\b(?:gmbh|ag|ug|kg|ohg|se|haftungsbeschränkt)\b.*$/i,
-      "",
-    ),
-  );
+  const companyStem = companyNameStem(companyName);
   const evidence = normalizeCompanyText(
     `${source.title ?? ""} ${source.content}`,
   );
@@ -541,9 +651,54 @@ function normalizeCompanyText(value: string) {
   return value
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ß/g, "ss")
     .toLocaleLowerCase("de")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+function companyNameStem(companyName: string) {
+  return normalizeCompanyText(
+    companyName.replace(
+      /\b(?:gmbh|ag|ug|kg|ohg|se|gbr|egbr|haftungsbeschränkt)\b.*$/i,
+      "",
+    ),
+  );
+}
+
+function normalizeGermanAddress(value: string) {
+  return normalizeCompanyText(value).replace(/\bstr\b/g, "strasse");
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function websiteVerificationProfile(input: {
+  companyName: string;
+  city?: string | null;
+  addressLine?: string | null;
+  postcode?: string | null;
+  rawProviderPayload: unknown;
+}): WebsiteVerificationProfile {
+  const raw = asRecord(input.rawProviderPayload);
+  const representatives = Array.isArray(raw.representation)
+    ? raw.representation.flatMap((value) => {
+        const name = asText(asRecord(value).name);
+        return name ? [name] : [];
+      })
+    : [];
+  return { ...input, representatives };
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function asText(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function toDate(value: string | null) {

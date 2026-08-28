@@ -21,7 +21,7 @@ export default async function LoginPage({
           <div>
             <p className="text-sm font-semibold">Unternehmen</p>
             <p className="text-xs uppercase tracking-[.14em] text-[#75807c]">
-              Private target intelligence
+              Private Zielmarkt-Intelligence
             </p>
           </div>
         </div>
@@ -29,26 +29,27 @@ export default async function LoginPage({
           <div className="flex items-center gap-2 text-[#16856b]">
             <LockKeyhole size={14} />
             <p className="text-xs font-semibold uppercase tracking-[.13em]">
-              Invite-only workspace
+              Arbeitsbereich nur mit Einladung
             </p>
           </div>
           <h1 className="mt-3 text-2xl font-semibold tracking-tight">
-            Sign in to continue
+            Anmelden, um fortzufahren
           </h1>
           <p className="mt-2 text-sm leading-6 text-[#66716d]">
-            Use the email address invited by your workspace administrator.
+            Verwenden Sie die E-Mail-Adresse, die von Ihrem Administrator
+            eingeladen wurde.
           </p>
           {reason && (
             <p className="mt-4 rounded-lg border border-[#ead6a5] bg-[#fff5d9] p-3 text-xs text-[#71591f]">
               {reason === "not_invited"
-                ? "This account is not an active workspace member."
-                : "Authentication is not configured for this environment."}
+                ? "Dieses Konto ist kein aktives Mitglied des Arbeitsbereichs."
+                : "Die Authentifizierung ist für diese Umgebung nicht eingerichtet."}
             </p>
           )}
           <LoginForm />
           <p className="mt-5 text-center text-xs leading-4 text-[#87908d]">
-            There is no public registration. Contact your administrator for an
-            invitation.
+            Es gibt keine öffentliche Registrierung. Wenden Sie sich für eine
+            Einladung an Ihren Administrator.
           </p>
         </div>
       </section>

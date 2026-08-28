@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   isRelevantTavilySource,
   selectOfficialWebsiteCandidate,
+  selectOfficialWebsiteCandidates,
+  verifyOfficialWebsiteEvidence,
 } from "@/lib/enrichment/external-providers";
+import { buildCompanyWebsiteQuery } from "@/lib/integrations/web-research";
 
 describe("Tavily company evidence relevance", () => {
   const source = (title: string, content = "") => ({
@@ -47,6 +50,21 @@ describe("Tavily company evidence relevance", () => {
     ).toBeNull();
   });
 
+  it("rejects local and medical directories when selecting an official website", () => {
+    expect(
+      selectOfficialWebsiteCandidates("Anästhesie MVZ Würzburg GmbH", [
+        {
+          ...source("Anästhesie MVZ Würzburg"),
+          url: "https://www.dasoertliche.de/Themen/Anästhesie-MVZ-Würzburg",
+        },
+        {
+          ...source("Anästhesie MVZ Würzburg"),
+          url: "https://www.total-lokal.de/branchenbuch/anaesthesie-mvz-wuerzburg.html",
+        },
+      ]),
+    ).toEqual([]);
+  });
+
   it("normalizes a relevant official candidate to its origin", () => {
     expect(
       selectOfficialWebsiteCandidate(
@@ -59,5 +77,55 @@ describe("Tavily company evidence relevance", () => {
         ],
       )?.url,
     ).toBe("https://www.dw-interieur.de");
+  });
+
+  it("accepts a website for a legal-form successor when independent profile facts agree", () => {
+    const result = verifyOfficialWebsiteEvidence(
+      {
+        companyName: "Anästhesie MVZ Würzburg GmbH",
+        city: "Würzburg",
+        addressLine: "Schweinfurter Straße 1",
+        postcode: "97080",
+        representatives: ["Stefan Englert", "Thomas Jarausch"],
+      },
+      [
+        {
+          ...source("Impressum - Anästhesie MVZ Würzburg"),
+          url: "https://www.anaesthesie-mvz.de/impressum",
+          content:
+            "Anästhesie MVZ Würzburg GbR, Schweinfurter Str. 1, 97080 Würzburg. Geschäftsführer: Dr. med. Stefan Englert.",
+        },
+      ],
+    );
+
+    expect(result.matched).toBe(true);
+    expect(result.signals).toEqual([
+      "company_name",
+      "city",
+      "street_address",
+      "postcode",
+      "representative",
+    ]);
+  });
+
+  it("does not accept a name-only website match", () => {
+    expect(
+      verifyOfficialWebsiteEvidence(
+        {
+          companyName: "Anästhesie MVZ Würzburg GmbH",
+          city: "Würzburg",
+          addressLine: "Schweinfurter Straße 1",
+          postcode: "97080",
+          representatives: ["Stefan Englert"],
+        },
+        [source("Anästhesie MVZ Würzburg", "Praxis in Würzburg")],
+      ).matched,
+    ).toBe(false);
+  });
+
+  it("searches for the brand without requiring the current legal form", () => {
+    expect(
+      buildCompanyWebsiteQuery("Anästhesie MVZ Würzburg GmbH", "Würzburg"),
+    ).toBe('"Anästhesie MVZ Würzburg" Würzburg Website Impressum');
   });
 });

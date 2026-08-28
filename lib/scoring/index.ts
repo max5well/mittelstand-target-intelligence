@@ -45,7 +45,7 @@ export function calculateScore(input: ScoreInput, weights = defaultWeights) {
       insufficientData: true,
       components: {},
       reasons: [
-        "Revenue, EBITDA, employees, and ownership are required for a fair score.",
+        "Umsatz, EBITDA, Beschäftigte und Eigentümerstruktur sind für eine belastbare Bewertung erforderlich.",
       ],
     };
   const revenueEuros = input.revenueCents / 100;
@@ -77,12 +77,12 @@ export function calculateScore(input: ScoreInput, weights = defaultWeights) {
     insufficientData: false,
     components,
     reasons: [
-      `EBITDA margin ${(margin * 100).toFixed(1)}%`,
-      `${input.employees} reported employees`,
+      `EBITDA-Marge ${(margin * 100).toFixed(1)} %`,
+      `${input.employees} gemeldete Beschäftigte`,
       input.successionSignal
-        ? "Evidence-backed succession signal"
-        : "No succession signal",
-      `Data age ${input.dataAgeDays} days`,
+        ? "Belegtes Nachfolgesignal"
+        : "Kein Nachfolgesignal",
+      `Datenalter: ${input.dataAgeDays} Tage`,
     ],
   };
 }

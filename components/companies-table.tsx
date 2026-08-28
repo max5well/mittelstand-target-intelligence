@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   flexRender,
   getCoreRowModel,
@@ -21,7 +21,12 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import type { Company, PipelineStatus } from "@/lib/types";
-import { formatMoney, formatPercent, statusLabel } from "@/lib/format";
+import {
+  formatMoney,
+  formatPercent,
+  ownershipLabel,
+  statusLabel,
+} from "@/lib/format";
 import { companiesToCsv } from "@/lib/company-csv";
 
 const allStatuses: Array<PipelineStatus | "all"> = [
@@ -37,22 +42,28 @@ const allStatuses: Array<PipelineStatus | "all"> = [
 ];
 
 const columnLabels: Record<string, string> = {
-  city: "Location",
-  industry: "Industry",
-  employees: "Employees",
-  revenueCents: "Revenue",
+  city: "Standort",
+  industry: "Branche",
+  employees: "Beschäftigte",
+  revenueCents: "Umsatz",
   ebitdaCents: "EBITDA",
-  ownership: "Ownership",
+  ownership: "Eigentümerstruktur",
   status: "Status",
-  score: "Fit",
+  score: "Eignung",
 };
 
 export function CompaniesTable({
   initialCompanies,
+  workspaceId,
 }: {
   initialCompanies: Company[];
+  workspaceId: string;
 }) {
-  const companies = initialCompanies;
+  const [companies, setCompanies] = useState(initialCompanies);
+  const [pendingFavorites, setPendingFavorites] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [favoriteError, setFavoriteError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<PipelineStatus | "all">("all");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
@@ -62,6 +73,54 @@ export function CompaniesTable({
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [page, setPage] = useState(0);
   const pageSize = 12;
+
+  const toggleFavorite = useCallback(
+    async (companyId: string, favorite: boolean) => {
+      setFavoriteError(null);
+      setPendingFavorites((current) => new Set(current).add(companyId));
+      setCompanies((current) =>
+        current.map((company) =>
+          company.id === companyId ? { ...company, favorite } : company,
+        ),
+      );
+
+      try {
+        const response = await fetch(`/api/companies/${companyId}/favorite`, {
+          method: favorite ? "PUT" : "DELETE",
+          headers: { "x-workspace-id": workspaceId },
+        });
+        const result = (await response.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(
+            result.error ??
+              "Der Favoritenstatus konnte nicht gespeichert werden.",
+          );
+        }
+      } catch (error) {
+        setCompanies((current) =>
+          current.map((company) =>
+            company.id === companyId
+              ? { ...company, favorite: !favorite }
+              : company,
+          ),
+        );
+        setFavoriteError(
+          error instanceof Error
+            ? error.message
+            : "Der Favoritenstatus konnte nicht gespeichert werden.",
+        );
+      } finally {
+        setPendingFavorites((current) => {
+          const next = new Set(current);
+          next.delete(companyId);
+          return next;
+        });
+      }
+    },
+    [workspaceId],
+  );
 
   const filtered = useMemo(
     () =>
@@ -90,21 +149,31 @@ export function CompaniesTable({
         enableHiding: false,
         header: "",
         cell: ({ row }) => (
-          <span
-            aria-label={row.original.favorite ? "Favorite" : "Not a favorite"}
-            className="text-[#b48b24]"
+          <button
+            type="button"
+            aria-label={
+              row.original.favorite
+                ? "Aus Favoriten entfernen"
+                : "Zu Favoriten hinzufügen"
+            }
+            aria-pressed={row.original.favorite}
+            disabled={pendingFavorites.has(row.original.id)}
+            onClick={() =>
+              toggleFavorite(row.original.id, !row.original.favorite)
+            }
+            className="grid size-8 place-items-center rounded-md text-[#b48b24] transition hover:bg-[#fff2c7] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b48b24] disabled:cursor-wait disabled:opacity-55"
           >
             <Star
               size={15}
               fill={row.original.favorite ? "currentColor" : "none"}
             />
-          </span>
+          </button>
         ),
       },
       {
         accessorKey: "name",
         enableHiding: false,
-        header: "Company",
+        header: "Unternehmen",
         cell: ({ row }) => (
           <div className="min-w-[260px]">
             <Link
@@ -122,7 +191,7 @@ export function CompaniesTable({
       },
       {
         accessorKey: "city",
-        header: "Location",
+        header: "Standort",
         cell: ({ row }) => (
           <div>
             <p>{row.original.city}</p>
@@ -132,7 +201,7 @@ export function CompaniesTable({
       },
       {
         accessorKey: "industry",
-        header: "Industry",
+        header: "Branche",
         cell: ({ row }) => (
           <div className="min-w-[180px]">
             <p>{row.original.industry}</p>
@@ -141,31 +210,31 @@ export function CompaniesTable({
       },
       {
         accessorKey: "employees",
-        header: "Employees",
+        header: "Beschäftigte",
         cell: ({ row }) =>
           row.original.employees === null ? (
-            <span title="Not available" className="text-[#8d9692]">
-              N/A
+            <span title="Nicht verfügbar" className="text-[#8d9692]">
+              N/V
             </span>
           ) : (
             <div className="text-right tabular-nums">
               <p>{row.original.employees}</p>
               <p className="mt-1 text-xs text-[#84908b]">
-                Reported · {row.original.employeeYear}
+                Gemeldet · {row.original.employeeYear}
               </p>
             </div>
           ),
       },
       {
         accessorKey: "revenueCents",
-        header: "Revenue",
+        header: "Umsatz",
         cell: ({ row }) => (
           <div className="text-right tabular-nums">
             <p>{formatMoney(row.original.revenueCents)}</p>
             <p className="mt-1 text-xs text-[#84908b]">
               {row.original.revenueCents === null
-                ? "N/A"
-                : `Reported · ${row.original.fiscalYear}`}
+                ? "N/V"
+                : `Gemeldet · ${row.original.fiscalYear}`}
             </p>
           </div>
         ),
@@ -183,7 +252,7 @@ export function CompaniesTable({
             <div className="text-right tabular-nums">
               <p>{formatMoney(row.original.ebitdaCents)}</p>
               <p className="mt-1 text-xs text-[#84908b]">
-                {margin === "N/A" ? "N/A" : `${margin} margin`}
+                {margin === "N/V" ? "N/V" : `${margin} Marge`}
               </p>
             </div>
           );
@@ -191,18 +260,18 @@ export function CompaniesTable({
       },
       {
         accessorKey: "ownership",
-        header: "Ownership",
+        header: "Eigentümerstruktur",
         cell: ({ row }) => (
           <div className="min-w-[190px]">
-            <p>{row.original.ownership}</p>
+            <p>{ownershipLabel(row.original.ownership)}</p>
             <p className="mt-1 text-xs text-[#84908b]">
               {row.original.ownershipMethod === "rules"
-                ? "Rule-based classification"
+                ? "Regelbasierte Klassifizierung"
                 : row.original.ownershipMethod === "openregister_flag"
-                  ? "OpenRegister classification"
+                  ? "OpenRegister-Klassifizierung"
                   : row.original.ownershipMethod === "ai_with_evidence"
-                    ? "Evidence-based classification"
-                    : "Analyst classification"}
+                    ? "Evidenzbasierte Klassifizierung"
+                    : "Analystenklassifizierung"}
             </p>
           </div>
         ),
@@ -218,11 +287,11 @@ export function CompaniesTable({
       },
       {
         accessorKey: "score",
-        header: "Fit",
+        header: "Eignung",
         cell: ({ row }) =>
           row.original.score === null ? (
-            <span title="Insufficient data" className="text-[#8d9692]">
-              N/A
+            <span title="Unzureichende Daten" className="text-[#8d9692]">
+              N/V
             </span>
           ) : (
             <span className="grid size-8 place-items-center rounded-full border border-[#afd8cc] font-semibold text-[#087b62]">
@@ -231,7 +300,7 @@ export function CompaniesTable({
           ),
       },
     ],
-    [],
+    [pendingFavorites, toggleFavorite],
   );
 
   // TanStack Table intentionally returns stateful functions; React Compiler skips this hook.
@@ -265,6 +334,14 @@ export function CompaniesTable({
 
   return (
     <section className="mt-6 overflow-hidden rounded-xl border border-[#d6d3cb] bg-[#faf9f6]">
+      {favoriteError ? (
+        <p
+          role="alert"
+          className="border-b border-[#efc7bf] bg-[#f9e9e6] px-4 py-3 text-xs text-[#8b3f35]"
+        >
+          {favoriteError}
+        </p>
+      ) : null}
       <div className="flex flex-wrap items-center gap-3 border-b border-[#dfddd6] p-4">
         <label className="flex h-9 min-w-[260px] flex-1 items-center gap-2 rounded-lg border border-[#d7d4cc] bg-white px-3 text-xs text-[#707a76]">
           <Search size={14} />
@@ -274,12 +351,12 @@ export function CompaniesTable({
               setQuery(event.target.value);
               setPage(0);
             }}
-            placeholder="Search company, city, owner, register ID…"
+            placeholder="Unternehmen, Stadt, Eigentümer oder Register-ID suchen…"
             className="w-full bg-transparent outline-none"
           />
         </label>
         <select
-          aria-label="Filter by status"
+          aria-label="Nach Status filtern"
           value={status}
           onChange={(event) => {
             setStatus(event.target.value as PipelineStatus | "all");
@@ -289,7 +366,7 @@ export function CompaniesTable({
         >
           {allStatuses.map((item) => (
             <option key={item} value={item}>
-              {item === "all" ? "All statuses" : statusLabel(item)}
+              {item === "all" ? "Alle Status" : statusLabel(item)}
             </option>
           ))}
         </select>
@@ -301,15 +378,15 @@ export function CompaniesTable({
           className={`flex h-9 items-center gap-2 rounded-lg border px-3 text-xs ${favoritesOnly ? "border-[#b89b4c] bg-[#fff7dc] text-[#6e571a]" : "border-[#d7d4cc] bg-white"}`}
         >
           <Star size={13} fill={favoritesOnly ? "currentColor" : "none"} />{" "}
-          Favorites
+          Favoriten
         </button>
         <details className="group relative">
           <summary className="flex h-9 list-none items-center gap-2 rounded-lg border border-[#d7d4cc] bg-white px-3 text-xs [&::-webkit-details-marker]:hidden">
-            <Columns3 size={13} /> Columns
+            <Columns3 size={13} /> Spalten
           </summary>
           <div className="absolute right-0 top-11 z-30 w-52 rounded-lg border border-[#d7d4cc] bg-white p-2 shadow-xl">
             <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-[.1em] text-[#77817d]">
-              Visible columns
+              Sichtbare Spalten
             </p>
             {table
               .getAllLeafColumns()
@@ -333,7 +410,7 @@ export function CompaniesTable({
           onClick={exportCsv}
           className="flex h-9 items-center gap-2 rounded-lg border border-[#d7d4cc] bg-white px-3 text-xs"
         >
-          <Download size={13} /> Export CSV
+          <Download size={13} /> CSV exportieren
         </button>
       </div>
       <div className="overflow-x-auto">
@@ -379,7 +456,7 @@ export function CompaniesTable({
       </div>
       <div className="flex items-center justify-between px-4 py-3 text-xs text-[#6d7773]">
         <p>
-          {filtered.length} authorized companies · page {page + 1} of{" "}
+          {filtered.length} freigegebene Unternehmen · Seite {page + 1} von{" "}
           {totalPages}
         </p>
         <div className="flex gap-1">

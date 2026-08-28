@@ -106,6 +106,7 @@ const TavilySchema = z.object({
         url: z.string().url(),
         title: z.string(),
         content: z.string(),
+        raw_content: z.string().nullable().optional(),
         score: z.number().optional(),
         published_date: z.string().nullable().optional(),
       })
@@ -157,15 +158,7 @@ export class TavilyProvider implements WebResearchProvider {
       },
       TavilySchema,
     );
-    return payload.results.map((result) => ({
-      provider: "tavily" as const,
-      url: result.url,
-      title: result.title,
-      content: result.content,
-      publishedAt: result.published_date ?? null,
-      score: result.score ?? null,
-      retrievedAt: new Date().toISOString(),
-    }));
+    return mapTavilyResults(payload.results);
   }
 
   async discoverOfficialWebsite(input: { companyName: string; city?: string }) {
@@ -179,22 +172,39 @@ export class TavilyProvider implements WebResearchProvider {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          query: `\"${input.companyName}\" ${input.city ?? "Germany"} official website Impressum`,
+          query: buildCompanyWebsiteQuery(input.companyName, input.city),
           search_depth: "advanced",
-          max_results: 5,
-          include_raw_content: true,
+          max_results: 10,
+          include_raw_content: "markdown",
+          country: "germany",
+          language: "de",
         }),
       },
       TavilySchema,
     );
-    return payload.results.map((result) => ({
-      provider: "tavily" as const,
-      url: result.url,
-      title: result.title,
-      content: result.content,
-      publishedAt: result.published_date ?? null,
-      score: result.score ?? null,
-      retrievedAt: new Date().toISOString(),
-    }));
+    return mapTavilyResults(payload.results);
   }
+}
+
+export function buildCompanyWebsiteQuery(companyName: string, city?: string) {
+  const brandName = companyName
+    .replace(
+      /\s+(?:gmbh|ag|ug|kg|ohg|se|gbr|egbr)(?:\s*\(haftungsbeschr[aä]nkt\))?\s*$/i,
+      "",
+    )
+    .trim();
+  return `\"${brandName || companyName}\" ${city ?? "Deutschland"} Website Impressum`;
+}
+
+function mapTavilyResults(results: z.infer<typeof TavilySchema>["results"]) {
+  const retrievedAt = new Date().toISOString();
+  return results.map((result) => ({
+    provider: "tavily" as const,
+    url: result.url,
+    title: result.title,
+    content: result.raw_content ?? result.content,
+    publishedAt: result.published_date ?? null,
+    score: result.score ?? null,
+    retrievedAt,
+  }));
 }

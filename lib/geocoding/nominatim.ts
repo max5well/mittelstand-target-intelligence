@@ -53,7 +53,8 @@ export async function geocodeRegisteredAddress(input: {
     .maybeSingle();
   if (cached) return cached;
 
-  const baseUrl = process.env.GEOCODER_BASE_URL ?? "https://nominatim.openstreetmap.org";
+  const baseUrl =
+    process.env.GEOCODER_BASE_URL ?? "https://nominatim.openstreetmap.org";
   const geocodeResponse = await enqueueGeocode(async () => {
     const url = new URL("/search", baseUrl);
     url.searchParams.set("q", formatted);
@@ -108,7 +109,8 @@ export async function geocodeRegisteredAddress(input: {
   const { error } = await supabase.from("geocoding_results").upsert(row, {
     onConflict: "company_id,address_hash",
   });
-  if (error) throw new Error(`Unable to persist geocoding result: ${error.message}`);
+  if (error)
+    throw new Error(`Unable to persist geocoding result: ${error.message}`);
   const { data: job, error: jobError } = await supabase
     .from("enrichment_jobs")
     .upsert(
@@ -132,16 +134,19 @@ export async function geocodeRegisteredAddress(input: {
     .single();
   if (jobError || !job)
     throw new Error(jobError?.message ?? "Unable to record geocoding job");
-  const { error: usageError } = await supabase.from("provider_usage_events").insert({
-    workspace_id: input.workspaceId,
-    provider: "openstreetmap_nominatim",
-    endpoint: "GET /search",
-    enrichment_job_id: job.id,
-    estimated_credits: 0,
-    actual_credits: 0,
-    request_count: 1,
-    http_status: geocodeResponse.httpStatus,
-  });
-  if (usageError) throw new Error(`Unable to record geocoding usage: ${usageError.message}`);
+  const { error: usageError } = await supabase
+    .from("provider_usage_events")
+    .insert({
+      workspace_id: input.workspaceId,
+      provider: "openstreetmap_nominatim",
+      endpoint: "GET /search",
+      enrichment_job_id: job.id,
+      estimated_credits: 0,
+      actual_credits: 0,
+      request_count: 1,
+      http_status: geocodeResponse.httpStatus,
+    });
+  if (usageError)
+    throw new Error(`Unable to record geocoding usage: ${usageError.message}`);
   return row;
 }
