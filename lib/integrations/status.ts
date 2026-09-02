@@ -75,7 +75,7 @@ export function getIntegrationStatuses(
       configured,
       destinationConfigured,
       liveMode,
-      usable: configured && destinationConfigured && liveMode,
+      usable: liveMode ? configured && destinationConfigured : true,
       operationalState: health[definition.id]?.state ?? "unknown",
       lastHttpStatus: health[definition.id]?.httpStatus ?? null,
     };

@@ -5,7 +5,7 @@ test("authenticated workspace can open and filter companies", async ({
 }) => {
   await page.goto("/companies");
   await expect(
-    page.getByRole("heading", { name: "Unternehmen" }),
+    page.getByRole("heading", { name: "Unternehmen", exact: true }),
   ).toBeVisible();
   await page
     .getByPlaceholder("Unternehmen, Stadt, Eigentümer oder Register-ID suchen…")
@@ -17,9 +17,11 @@ test("authenticated workspace can open and filter companies", async ({
 
 test("saved search shows cost-aware builder", async ({ page }) => {
   await page.goto("/searches");
-  await page
-    .getByRole("button", { name: "Gespeicherte Suche erstellen" })
-    .click();
+  await page.getByRole("button", { name: "Klimatechnik einrichten" }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Gespeicherte Suche erstellen" }),
+  ).toBeVisible();
   await expect(page.getByText("Geschätzte Anbieternutzung")).toBeVisible();
+  await page.getByRole("radio", { name: /Täglich wiederholen/ }).check();
   await expect(page.getByText("Monatliche Schätzung · 30 Tage")).toBeVisible();
 });
