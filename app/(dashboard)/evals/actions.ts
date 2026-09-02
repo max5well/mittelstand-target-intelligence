@@ -3,6 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireEvalAdmin } from "@/lib/auth/evals";
+import {
+  getCopilotPayloadTraces,
+  type CopilotPayloadTrace,
+} from "@/lib/data/copilot";
 import { createAdminClient } from "@/lib/db/admin";
 
 export type EvalReviewState = { ok: boolean; message: string };
@@ -17,6 +21,33 @@ const ReviewSchema = z.object({
   notes: z.string().trim().max(3_000),
   addToDataset: z.boolean(),
 });
+
+export type EvalPayloadState =
+  | { ok: true; traces: CopilotPayloadTrace[] }
+  | { ok: false; message: string };
+
+export async function loadCopilotPayloads(
+  runId: string,
+): Promise<EvalPayloadState> {
+  const user = await requireEvalAdmin();
+  const parsed = z.string().uuid().safeParse(runId);
+  if (!parsed.success)
+    return { ok: false, message: "Der ausgewählte Lauf ist ungültig." };
+  try {
+    return {
+      ok: true,
+      traces: await getCopilotPayloadTraces(user.workspaceId, parsed.data),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Die LLM-Payloads konnten nicht geladen werden.",
+    };
+  }
+}
 
 export async function submitHumanReview(
   _previous: EvalReviewState,

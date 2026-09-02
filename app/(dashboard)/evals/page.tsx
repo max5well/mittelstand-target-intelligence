@@ -1,5 +1,6 @@
 import { CircleHelp, FlaskConical, Gauge, ShieldCheck } from "lucide-react";
 import { EvalReviewForm } from "@/components/eval-review-form";
+import { EvalPayloadInspector } from "@/components/eval-payload-inspector";
 import { PageHeader } from "@/components/app-shell";
 import { requireEvalAdmin } from "@/lib/auth/evals";
 import { getEvalConsoleData } from "@/lib/data/copilot";
@@ -233,6 +234,15 @@ export default async function EvalConsolePage() {
           </section>
         </div>
       </div>
+
+      <EvalPayloadInspector
+        runs={data.runs.map((run) => ({
+          id: run.id as string,
+          question: run.user_question as string,
+          status: run.status as string,
+          createdAt: run.created_at as string,
+        }))}
+      />
     </div>
   );
 }

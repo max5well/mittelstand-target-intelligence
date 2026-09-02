@@ -27,6 +27,7 @@ const OpenRouterResponseSchema = z
 export type StructuredGeneration<T> = {
   output: T;
   model: string;
+  requestPayload: Record<string, unknown>;
   usage: Record<string, unknown>;
   requestCount: number;
   durationMs: number;
@@ -53,6 +54,24 @@ export async function generateStructured<T>(input: {
   for (const model of models) {
     try {
       const metrics: ProviderRequestMetrics = { requestCount: 0 };
+      const requestPayload = {
+        model,
+        messages: [
+          { role: "system", content: input.system },
+          { role: "user", content: JSON.stringify(input.payload) },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: input.schemaName,
+            strict: true,
+            schema: z.toJSONSchema(input.schema),
+          },
+        },
+        temperature: 0,
+        max_tokens: input.maxTokens ?? 4_000,
+        store: false,
+      };
       const response = await fetchProvider(
         "https://openrouter.ai/api/v1/chat/completions",
         {
@@ -61,24 +80,7 @@ export async function generateStructured<T>(input: {
             Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            model,
-            messages: [
-              { role: "system", content: input.system },
-              { role: "user", content: JSON.stringify(input.payload) },
-            ],
-            response_format: {
-              type: "json_schema",
-              json_schema: {
-                name: input.schemaName,
-                strict: true,
-                schema: z.toJSONSchema(input.schema),
-              },
-            },
-            temperature: 0,
-            max_tokens: input.maxTokens ?? 4_000,
-            store: false,
-          }),
+          body: JSON.stringify(requestPayload),
         },
         OpenRouterResponseSchema,
         1,
@@ -94,6 +96,7 @@ export async function generateStructured<T>(input: {
       return {
         output,
         model: response.model,
+        requestPayload,
         usage,
         requestCount: Math.max(1, metrics.requestCount),
         durationMs: Date.now() - startedAt,

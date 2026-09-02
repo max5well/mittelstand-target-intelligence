@@ -9,6 +9,17 @@ import type {
 
 type Json = Record<string, unknown>;
 
+export type CopilotPayloadTrace = {
+  sequence: number;
+  eventType: string;
+  promptVersion: string | null;
+  model: string;
+  provider: string | null;
+  inputSnapshot: Json;
+  durationMs: number | null;
+  createdAt: string;
+};
+
 function databaseError(label: string, error: { message: string } | null) {
   if (error) throw new Error(`${label}: ${error.message}`);
 }
@@ -275,6 +286,32 @@ export async function getEvalConsoleData(workspaceId: string) {
     datasets: datasets.data ?? [],
     cases: cases.data ?? [],
   };
+}
+
+export async function getCopilotPayloadTraces(
+  workspaceId: string,
+  runId: string,
+): Promise<CopilotPayloadTrace[]> {
+  const { data, error } = await createAdminClient()
+    .from("copilot_trace_events")
+    .select(
+      "sequence,event_type,prompt_version,model,provider,input_snapshot,duration_ms,created_at",
+    )
+    .eq("workspace_id", workspaceId)
+    .eq("research_run_id", runId)
+    .not("model", "is", null)
+    .order("sequence", { ascending: true });
+  databaseError("Unable to load Copilot payload traces", error);
+  return (data ?? []).map((trace) => ({
+    sequence: trace.sequence as number,
+    eventType: trace.event_type as string,
+    promptVersion: (trace.prompt_version as string | null) ?? null,
+    model: trace.model as string,
+    provider: (trace.provider as string | null) ?? null,
+    inputSnapshot: (trace.input_snapshot as Json) ?? {},
+    durationMs: (trace.duration_ms as number | null) ?? null,
+    createdAt: trace.created_at as string,
+  }));
 }
 
 export async function saveEvalResult(values: Record<string, unknown>) {
