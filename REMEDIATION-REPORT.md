@@ -74,7 +74,7 @@ Monitoring code is active through structured Vercel logs. External alert deliver
 - CI/RLS fixture corrections and browser hardening are recorded in commits `780570a`, `825bd79`, `f3b78a2`, `1afe707`, and `fbeebb2`.
 - All remediation commits are pushed to `origin/main`; both [standard CI](https://github.com/max5well/mittelstand-target-intelligence/actions/runs/33644093009) and the expanded [Verify release gate](https://github.com/max5well/mittelstand-target-intelligence/actions/runs/33644093146) pass on `fbeebb2`.
 - `vercel git connect` confirms the project is connected to `max5well/mittelstand-target-intelligence`. Git deployments initially showed `BLOCKED` because this checkout incorrectly attributed commits to the unrelated GitHub user `Rappy`; the repository-local author was corrected to the established `max5well <maximiliandev5@gmail.com>` identity without force-rewriting published history.
-- A correctly attributed documentation commit triggers the final Git-sourced Production build; the canonical production login returned HTTP 200 during handoff verification.
+- Correctly attributed commit `bf9648d` produced a **Ready** Git-sourced Production deployment at [`zielunternehmen-c67v86pn5-maxs-projects-c0536428.vercel.app`](https://zielunternehmen-c67v86pn5-maxs-projects-c0536428.vercel.app), owns the canonical `zielunternehmen.vercel.app` alias, and returned HTTP 200 on `/login` during handoff verification.
 - The hosted Supabase migration list includes `20260902170000_audit_remediation_guards.sql` locally and remotely.
 
 ## Remaining account-owner checklist
