@@ -1,9 +1,10 @@
 import "server-only";
 import { z } from "zod";
 import { fetchProvider, type ProviderRequestMetrics } from "./http";
+import { SafePublicHttpUrlSchema } from "@/lib/url-safety";
 
 export type WebSource = {
-  provider: "firecrawl" | "tavily";
+  provider: "firecrawl" | "tavily" | "exa";
   url: string;
   title: string | null;
   content: string;
@@ -19,6 +20,104 @@ export interface WebResearchProvider {
     verifiedDomain?: string;
     city?: string;
   }): Promise<WebSource[]>;
+}
+
+const ExaSearchSchema = z
+  .object({
+    requestId: z.string().optional(),
+    results: z.array(
+      z
+        .object({
+          url: z.string().url(),
+          title: z.string().nullable().optional(),
+          publishedDate: z.string().nullable().optional(),
+          text: z.string().nullable().optional(),
+          highlights: z.array(z.string()).optional(),
+          score: z.number().nullable().optional(),
+        })
+        .passthrough(),
+    ),
+    costDollars: z
+      .object({ total: z.number().nonnegative().optional() })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+
+export class ExaProvider {
+  readonly name = "exa";
+  lastRequestCount = 0;
+  lastCostDollars: number | null = null;
+
+  isAvailable() {
+    return (
+      Boolean(process.env.EXA_API_KEY) || process.env.MOCK_PROVIDERS !== "false"
+    );
+  }
+
+  async search(
+    query: string,
+    options: { maxResults?: number; includeDomains?: string[] } = {},
+  ): Promise<WebSource[]> {
+    if (process.env.MOCK_PROVIDERS !== "false") {
+      return [
+        {
+          provider: "exa",
+          url: "https://example.com/fictional-semantic-result",
+          title: `Semantischer Treffer: ${query}`,
+          content:
+            "Fixture evidence for a German company research question. This result is intentionally fictional.",
+          publishedAt: null,
+          score: 0.9,
+          retrievedAt: new Date().toISOString(),
+        },
+      ];
+    }
+    if (!process.env.EXA_API_KEY) return [];
+
+    const metrics: ProviderRequestMetrics = { requestCount: 0 };
+    const payload = await fetchProvider(
+      "https://api.exa.ai/search",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": process.env.EXA_API_KEY,
+        },
+        body: JSON.stringify({
+          query,
+          type: "auto",
+          numResults: Math.min(Math.max(options.maxResults ?? 5, 1), 10),
+          includeDomains: options.includeDomains?.length
+            ? options.includeDomains
+            : undefined,
+          contents: {
+            text: { maxCharacters: 12_000 },
+            highlights: { maxCharacters: 1_500 },
+            livecrawl: "preferred",
+          },
+        }),
+      },
+      ExaSearchSchema,
+      2,
+      metrics,
+    );
+    this.lastRequestCount = metrics.requestCount;
+    this.lastCostDollars = payload.costDollars?.total ?? null;
+    const retrievedAt = new Date().toISOString();
+    return payload.results.map((result) => ({
+      provider: "exa" as const,
+      url: result.url,
+      title: result.title ?? null,
+      content:
+        result.text?.trim() ||
+        result.highlights?.filter(Boolean).join("\n") ||
+        "",
+      publishedAt: result.publishedDate ?? null,
+      score: result.score ?? null,
+      retrievedAt,
+    }));
+  }
 }
 
 const FirecrawlSchema = z
@@ -80,12 +179,17 @@ export class FirecrawlProvider implements WebResearchProvider {
   async research(input: { companyName: string; verifiedDomain?: string }) {
     if (!input.verifiedDomain)
       throw new Error("Firecrawl requires a verified company website");
+    return this.scrapeUrl(input.verifiedDomain, input.companyName);
+  }
+
+  async scrapeUrl(url: string, companyName?: string) {
+    const safeUrl = SafePublicHttpUrlSchema.parse(url);
     if (process.env.MOCK_PROVIDERS !== "false")
       return [
         {
           provider: "firecrawl" as const,
-          url: input.verifiedDomain,
-          title: `${input.companyName} — company website`,
+          url: safeUrl,
+          title: `${companyName ?? "Company"} — company website`,
           content:
             "Fictional first-party fixture covering products, industries, locations, management and careers.",
           publishedAt: null,
@@ -103,7 +207,7 @@ export class FirecrawlProvider implements WebResearchProvider {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          url: input.verifiedDomain,
+          url: safeUrl,
           formats: ["markdown"],
           onlyMainContent: true,
           location: { country: "DE", languages: ["de-DE", "en-US"] },
@@ -122,7 +226,7 @@ export class FirecrawlProvider implements WebResearchProvider {
       ? [
           {
             provider: "firecrawl" as const,
-            url: page.metadata?.sourceURL ?? input.verifiedDomain,
+            url: page.metadata?.sourceURL ?? safeUrl,
             title: firstText(page.metadata?.title),
             content: page.markdown ?? "",
             publishedAt: null,
@@ -211,12 +315,32 @@ export class TavilyProvider implements WebResearchProvider {
     verifiedDomain?: string;
     city?: string;
   }) {
+    return this.search(
+      buildCompanyResearchQuery(input.companyName, input.city),
+      {
+        maxResults: 10,
+        topic: "news",
+        excludeDomains: input.verifiedDomain
+          ? [websiteHostname(input.verifiedDomain)]
+          : undefined,
+      },
+    );
+  }
+
+  async search(
+    query: string,
+    options: {
+      maxResults?: number;
+      topic?: "general" | "news";
+      excludeDomains?: string[];
+    } = {},
+  ) {
     if (process.env.MOCK_PROVIDERS !== "false")
       return [
         {
           provider: "tavily" as const,
           url: "https://example.com/fictional-news",
-          title: `Fictional news about ${input.companyName}`,
+          title: `Fictional result for ${query}`,
           content:
             "Fixture evidence for a management change and planned production expansion.",
           publishedAt: "2026-06-14",
@@ -234,11 +358,12 @@ export class TavilyProvider implements WebResearchProvider {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          query: buildCompanyResearchQuery(input.companyName, input.city),
+          query,
           search_depth: "advanced",
-          topic: "news",
-          max_results: 10,
+          topic: options.topic ?? "general",
+          max_results: Math.min(Math.max(options.maxResults ?? 5, 1), 10),
           include_raw_content: true,
+          exclude_domains: options.excludeDomains,
         }),
       },
       TavilySchema,
@@ -293,7 +418,11 @@ export function buildCompanyResearchQuery(companyName: string, city?: string) {
     /\s+(?:germany|deutschland)$/i,
     "",
   );
-  return `\"${brandName || companyName}\" ${city ?? "Deutschland"} Unternehmen News Presse`;
+  return `\"${brandName || companyName}\" ${city ?? "Deutschland"} Nachrichten Übernahme Investition Expansion Management`;
+}
+
+function websiteHostname(value: string) {
+  return new URL(value).hostname.toLowerCase().replace(/^www\./, "");
 }
 
 function companyBrandName(companyName: string) {

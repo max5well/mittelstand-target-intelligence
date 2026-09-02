@@ -1,7 +1,7 @@
 import "server-only";
 
 export type IntegrationStatus = {
-  id: "openregister" | "firecrawl" | "tavily" | "apollo";
+  id: "openregister" | "firecrawl" | "tavily" | "exa" | "apollo";
   name: string;
   purpose: string;
   configured: boolean;
@@ -57,6 +57,15 @@ export function getIntegrationStatuses(
       purpose: "Externe Web- und Nachrichtenrecherche mit Quellen-URLs",
       capabilities: ["Websuche", "Nachrichtenrecherche"],
       dashboardUrl: "https://app.tavily.com/",
+    },
+    {
+      id: "exa" as const,
+      name: "Exa",
+      env: "EXA_API_KEY",
+      purpose:
+        "Semantische Websuche für ähnliche Unternehmen und kontextnahe Quellen",
+      capabilities: ["Semantische Suche", "Ähnliche Quellen", "Webinhalte"],
+      dashboardUrl: "https://dashboard.exa.ai/",
     },
     {
       id: "apollo" as const,

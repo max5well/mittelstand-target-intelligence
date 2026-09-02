@@ -21,7 +21,7 @@ import {
   type ReviewedIntelligence,
 } from "@/lib/integrations/openrouter/extract";
 import { isOpenRegisterId } from "@/lib/openregister-id";
-import { isPublicHttpUrl } from "@/lib/url-safety";
+import { isPublicHttpUrl, isSameWebsiteUrl } from "@/lib/url-safety";
 import { resolvePublicHttpUrl } from "@/lib/url-safety-server";
 
 export const externalProviderStages = [
@@ -1077,9 +1077,15 @@ function webSourceRejectionReason(
   if (normalizeCompanyText(source.content).length < 80)
     return "too_little_text";
   if (
+    source.provider === "tavily" &&
+    verifiedWebsite &&
+    isSameWebsiteUrl(source.url, verifiedWebsite)
+  )
+    return "first_party_domain";
+  if (
     source.provider === "firecrawl" &&
     verifiedWebsite &&
-    !isSameWebsite(source.url, verifiedWebsite)
+    !isSameWebsiteUrl(source.url, verifiedWebsite)
   )
     return "off_verified_domain";
   if (
@@ -1095,7 +1101,7 @@ export function isRelevantTavilySource(
   source: WebSource,
   verifiedWebsite?: string | null,
 ) {
-  if (verifiedWebsite && isSameWebsite(source.url, verifiedWebsite))
+  if (verifiedWebsite && isSameWebsiteUrl(source.url, verifiedWebsite))
     return true;
   const companyStem = companyNameStem(companyName);
   const evidence = normalizeCompanyText(
@@ -1172,24 +1178,6 @@ const COMPANY_NAME_NOISE_TOKENS = new Set([
   "gruppe",
   "group",
 ]);
-
-function isSameWebsite(first: string, second: string) {
-  try {
-    const firstHost = new URL(first).hostname
-      .toLowerCase()
-      .replace(/^www\./, "");
-    const secondHost = new URL(second).hostname
-      .toLowerCase()
-      .replace(/^www\./, "");
-    return (
-      firstHost === secondHost ||
-      firstHost.endsWith(`.${secondHost}`) ||
-      secondHost.endsWith(`.${firstHost}`)
-    );
-  } catch {
-    return false;
-  }
-}
 
 function formatSourceExcerpt(content: string) {
   return content

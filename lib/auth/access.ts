@@ -8,6 +8,8 @@ export const ALLOWED_EMAILS = [
   "leonhardt@dge.technology",
 ] as const;
 
+export const EVAL_ADMIN_EMAIL = "wiese@dge.technology";
+
 const allowedEmailSet = new Set<string>(ALLOWED_EMAILS);
 
 export function normalizeEmail(email: string | null | undefined) {
@@ -16,6 +18,10 @@ export function normalizeEmail(email: string | null | undefined) {
 
 export function isAllowedEmail(email: string | null | undefined) {
   return allowedEmailSet.has(normalizeEmail(email));
+}
+
+export function isEvalAdminEmail(email: string | null | undefined) {
+  return normalizeEmail(email) === EVAL_ADMIN_EMAIL;
 }
 
 export function isAllowedGoogleUser(

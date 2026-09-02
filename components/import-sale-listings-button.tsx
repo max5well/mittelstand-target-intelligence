@@ -9,6 +9,8 @@ type ImportResult = {
   updated: number;
   staleMarked: number;
   excludedNonGerman: number;
+  providers?: Array<{ providerLabel: string }>;
+  failed?: Array<{ providerLabel: string }>;
   error?: string;
 };
 
@@ -27,7 +29,7 @@ export function ImportSaleListingsButton({
     setError(null);
     setNotice(null);
     try {
-      const response = await fetch("/api/providers/concess/import", {
+      const response = await fetch("/api/providers/sale-listings/import", {
         method: "POST",
         headers: { "x-workspace-id": workspaceId },
       });
@@ -37,7 +39,7 @@ export function ImportSaleListingsButton({
           result.error ?? "Die Verkaufsangebote konnten nicht geladen werden.",
         );
       setNotice(
-        `${result.imported} neue und ${result.updated} bekannte deutsche Verkaufsangebote synchronisiert. ${result.excludedNonGerman} nicht-deutsche Angebote wurden ausgeschlossen.`,
+        `${result.imported} neue und ${result.updated} bekannte deutsche Verkaufsangebote aus ${result.providers?.length ?? 0} Plattformen synchronisiert. ${result.excludedNonGerman} nicht-deutsche Angebote wurden ausgeschlossen.${result.failed?.length ? ` Fehlgeschlagen: ${result.failed.map((provider) => provider.providerLabel).join(", ")}.` : ""}`,
       );
       router.refresh();
     } catch (caught) {

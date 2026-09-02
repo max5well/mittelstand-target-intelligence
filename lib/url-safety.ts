@@ -75,6 +75,24 @@ export function isPublicHttpUrl(value: string) {
   }
 }
 
+export function isSameWebsiteUrl(first: string, second: string) {
+  try {
+    const firstHost = new URL(first).hostname
+      .toLowerCase()
+      .replace(/^www\./, "");
+    const secondHost = new URL(second).hostname
+      .toLowerCase()
+      .replace(/^www\./, "");
+    return (
+      firstHost === secondHost ||
+      firstHost.endsWith(`.${secondHost}`) ||
+      secondHost.endsWith(`.${firstHost}`)
+    );
+  } catch {
+    return false;
+  }
+}
+
 export const SafePublicHttpUrlSchema = z
   .string()
   .url()
