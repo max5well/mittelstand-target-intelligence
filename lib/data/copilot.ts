@@ -9,6 +9,18 @@ import type {
 
 type Json = Record<string, unknown>;
 
+export type CopilotSourceInput = {
+  provider: string;
+  url: string;
+  canonicalUrl: string;
+  title: string | null;
+  decision: "accepted" | "rejected";
+  rejectionReason?: string;
+  excerpt?: string;
+  retrievedAt?: string | null;
+  rawPayload?: Json;
+};
+
 export type CopilotPayloadTrace = {
   sequence: number;
   eventType: string;
@@ -127,23 +139,14 @@ export async function saveCopilotQuery(input: {
 export async function saveCopilotSources(
   workspaceId: string,
   runId: string,
-  sources: Array<{
-    provider: string;
-    url: string;
-    canonicalUrl: string;
-    title: string | null;
-    decision: "accepted" | "rejected";
-    rejectionReason?: string;
-    excerpt?: string;
-    retrievedAt?: string | null;
-    rawPayload?: Json;
-  }>,
+  sources: CopilotSourceInput[],
 ) {
   if (!sources.length) return new Map<string, string>();
+  const uniqueSources = deduplicateCopilotSources(sources);
   const { data, error } = await createAdminClient()
     .from("copilot_research_sources")
     .upsert(
-      sources.map((source) => ({
+      uniqueSources.map((source) => ({
         workspace_id: workspaceId,
         research_run_id: runId,
         provider: source.provider,
@@ -160,11 +163,43 @@ export async function saveCopilotSources(
       })),
       { onConflict: "research_run_id,canonical_url" },
     )
-    .select("id,url");
+    .select("id,url,canonical_url");
   databaseError("Unable to save Copilot sources", error);
-  return new Map(
-    (data ?? []).map((row) => [row.url as string, row.id as string]),
+  const idByCanonicalUrl = new Map(
+    (data ?? []).map((row) => [row.canonical_url as string, row.id as string]),
   );
+  return new Map(
+    sources.flatMap((source) => {
+      const id = idByCanonicalUrl.get(source.canonicalUrl);
+      return id ? [[source.url, id] as const] : [];
+    }),
+  );
+}
+
+export function deduplicateCopilotSources(sources: CopilotSourceInput[]) {
+  const byCanonicalUrl = new Map<string, CopilotSourceInput>();
+  for (const source of sources) {
+    const existing = byCanonicalUrl.get(source.canonicalUrl);
+    if (
+      !existing ||
+      (existing.decision === "rejected" && source.decision === "accepted")
+    )
+      byCanonicalUrl.set(source.canonicalUrl, source);
+  }
+  return [...byCanonicalUrl.values()];
+}
+
+export async function deleteCopilotRun(workspaceId: string, runId: string) {
+  const { data, error } = await createAdminClient()
+    .from("copilot_research_runs")
+    .delete()
+    .eq("workspace_id", workspaceId)
+    .eq("id", runId)
+    .in("status", ["completed", "failed", "cancelled"])
+    .select("id")
+    .maybeSingle();
+  databaseError("Unable to delete Copilot research run", error);
+  return Boolean(data);
 }
 
 export async function saveCopilotClaims(

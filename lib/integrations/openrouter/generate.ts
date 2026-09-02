@@ -57,6 +57,7 @@ export async function generateStructured<T>(input: {
         },
         temperature: 0,
         max_tokens: input.maxTokens ?? 4_000,
+        stream: false,
         provider: { require_parameters: true },
         plugins: [{ id: "response-healing" }],
         store: false,

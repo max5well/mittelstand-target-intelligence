@@ -10,6 +10,7 @@ import {
   Sparkles,
   ThumbsDown,
   ThumbsUp,
+  Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { CopilotMode, CopilotRunView } from "@/lib/copilot/types";
@@ -49,6 +50,7 @@ export function CompanyCopilot({
   const [mode, setMode] = useState<CopilotMode>("auto");
   const [runs, setRuns] = useState(initialRuns);
   const [submitting, setSubmitting] = useState(false);
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(
     initialRuns[0]?.id ?? null,
@@ -148,6 +150,42 @@ export function CompanyCopilot({
     }
   }
 
+  async function deleteResearch(run: CopilotRunView) {
+    const confirmed = window.confirm(
+      `Recherche „${run.question}“ endgültig löschen? Die Recherche und ihre gespeicherten Quellen werden entfernt.`,
+    );
+    if (!confirmed) return;
+    setError(null);
+    setDeletingIds((current) => new Set(current).add(run.id));
+    try {
+      const response = await fetch(`/api/copilot/runs/${run.id}`, {
+        method: "DELETE",
+        headers: { "x-workspace-id": workspaceId },
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+      };
+      if (!response.ok)
+        throw new Error(
+          payload.error || "Recherche konnte nicht gelöscht werden.",
+        );
+      setRuns((current) => current.filter((item) => item.id !== run.id));
+      setExpandedId((current) => (current === run.id ? null : current));
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Recherche konnte nicht gelöscht werden.",
+      );
+    } finally {
+      setDeletingIds((current) => {
+        const next = new Set(current);
+        next.delete(run.id);
+        return next;
+      });
+    }
+  }
+
   return (
     <section className="mt-8 overflow-hidden rounded-2xl border border-[#bfcfc9] bg-[#f7fbf9] shadow-[0_12px_40px_rgba(20,68,56,.06)]">
       <div className="border-b border-[#d6e2de] bg-[linear-gradient(120deg,#123d33,#176f5b)] px-5 py-5 text-white md:px-7">
@@ -237,11 +275,13 @@ export function CompanyCopilot({
                 run={run}
                 workspaceId={workspaceId}
                 expanded={expandedId === run.id}
+                deleting={deletingIds.has(run.id)}
                 onToggle={() =>
                   setExpandedId((current) =>
                     current === run.id ? null : run.id,
                   )
                 }
+                onDelete={() => void deleteResearch(run)}
               />
             ))}
           </div>
@@ -255,45 +295,70 @@ function RunCard({
   run,
   workspaceId,
   expanded,
+  deleting,
   onToggle,
+  onDelete,
 }: {
   run: CopilotRunView;
   workspaceId: string;
   expanded: boolean;
+  deleting: boolean;
   onToggle: () => void;
+  onDelete: () => void;
 }) {
   const running = !["completed", "failed", "cancelled"].includes(run.status);
   const answer = run.answerPayload;
   return (
     <article className="rounded-xl border border-[#d8dfdc] bg-white">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex w-full items-start justify-between gap-4 px-4 py-4 text-left"
-      >
-        <span className="min-w-0">
-          <span className="block text-sm font-semibold leading-5 text-[#26322e]">
-            {run.question}
+      <div className="flex items-start">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex min-w-0 flex-1 items-start justify-between gap-4 px-4 py-4 text-left"
+        >
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold leading-5 text-[#26322e]">
+              {run.question}
+            </span>
+            <span
+              className={`mt-1.5 flex items-center gap-1.5 text-xs ${run.status === "failed" ? "text-[#ad4938]" : "text-[#66736e]"}`}
+            >
+              {running ? (
+                <LoaderCircle
+                  size={13}
+                  className="animate-spin text-[#087b62]"
+                />
+              ) : run.status === "completed" ? (
+                <Check size={13} className="text-[#087b62]" />
+              ) : (
+                <Clock3 size={13} />
+              )}
+              {statusCopy[run.status]}
+              {run.resolvedMode ? ` · ${depthLabel(run.resolvedMode)}` : ""}
+            </span>
           </span>
-          <span
-            className={`mt-1.5 flex items-center gap-1.5 text-xs ${run.status === "failed" ? "text-[#ad4938]" : "text-[#66736e]"}`}
+          <ChevronDown
+            size={16}
+            className={`mt-0.5 shrink-0 text-[#71807a] transition ${expanded ? "rotate-180" : ""}`}
+          />
+        </button>
+        {!running ? (
+          <button
+            type="button"
+            aria-label={`Recherche „${run.question}“ löschen`}
+            title="Recherche löschen"
+            disabled={deleting}
+            onClick={onDelete}
+            className="mr-3 mt-3 grid size-9 shrink-0 place-items-center rounded-lg text-[#8d5c51] transition hover:bg-[#f9e9e6] hover:text-[#a23f34] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#a23f34] disabled:cursor-wait disabled:opacity-45"
           >
-            {running ? (
-              <LoaderCircle size={13} className="animate-spin text-[#087b62]" />
-            ) : run.status === "completed" ? (
-              <Check size={13} className="text-[#087b62]" />
+            {deleting ? (
+              <LoaderCircle size={15} className="animate-spin" />
             ) : (
-              <Clock3 size={13} />
+              <Trash2 size={15} />
             )}
-            {statusCopy[run.status]}
-            {run.resolvedMode ? ` · ${depthLabel(run.resolvedMode)}` : ""}
-          </span>
-        </span>
-        <ChevronDown
-          size={16}
-          className={`mt-0.5 shrink-0 text-[#71807a] transition ${expanded ? "rotate-180" : ""}`}
-        />
-      </button>
+          </button>
+        ) : null}
+      </div>
       {expanded ? (
         <div className="border-t border-[#e4e8e6] px-4 py-4 md:px-5">
           {run.status === "completed" ? (

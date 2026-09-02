@@ -54,6 +54,7 @@ describe("OpenRouter structured generation", () => {
       },
       temperature: 0,
       max_tokens: 500,
+      stream: false,
       provider: { require_parameters: true },
       plugins: [{ id: "response-healing" }],
       store: false,

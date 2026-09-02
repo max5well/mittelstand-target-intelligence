@@ -132,6 +132,7 @@ export async function extractIntelligence(
         },
         temperature: 0,
         max_tokens: MAX_OUTPUT_TOKENS,
+        stream: false,
         provider: { require_parameters: true },
         plugins: [{ id: "response-healing" }],
       }),

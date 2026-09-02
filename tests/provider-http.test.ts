@@ -75,6 +75,26 @@ describe("provider HTTP errors", () => {
     expect(JSON.stringify(errorSpy.mock.calls)).not.toContain("do-not-log");
     errorSpy.mockRestore();
   });
+
+  it("accepts a JSON response accidentally framed as a single SSE event", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response('data: {"ok":true}\n\ndata: [DONE]\n', {
+          headers: { "content-type": "text/event-stream" },
+        }),
+      ),
+    );
+
+    await expect(
+      fetchProvider(
+        "https://api.example.com/result",
+        {},
+        z.object({ ok: z.boolean() }),
+        1,
+      ),
+    ).resolves.toEqual({ ok: true });
+  });
 });
 
 describe("provider credit attribution", () => {
