@@ -55,6 +55,7 @@ describe("OpenRouter structured generation", () => {
       temperature: 0,
       max_tokens: 500,
       provider: { require_parameters: true },
+      plugins: [{ id: "response-healing" }],
       store: false,
     });
     expect(result.estimatedCostMicros).toBeNull();
@@ -84,9 +85,7 @@ describe("OpenRouter structured generation", () => {
       .mockResolvedValueOnce(
         Response.json({
           model: "test/fallback",
-          choices: [
-            { message: { content: JSON.stringify({ answer: "ok" }) } },
-          ],
+          choices: [{ message: { content: JSON.stringify({ answer: "ok" }) } }],
           usage: {
             prompt_tokens: 8,
             completion_tokens: 4,
@@ -109,5 +108,112 @@ describe("OpenRouter structured generation", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(result.model).toBe("test/fallback");
     expect(result.output).toEqual({ answer: "ok" });
+  });
+
+  it.each([
+    {
+      model: "z-ai/glm-5.3-flash",
+      response: {
+        choices: [{ message: { content: JSON.stringify({ answer: "glm" }) } }],
+        usage: null,
+      },
+      answer: "glm",
+      costMicros: null,
+    },
+    {
+      model: "google/gemini-3-flash-preview",
+      response: {
+        model: "google/gemini-3-flash-preview",
+        choices: [
+          {
+            message: {
+              content: [
+                { type: "text", text: '{"answer":' },
+                { type: "text", text: '"gemini"}' },
+              ],
+            },
+          },
+        ],
+        usage: { cost: "0.000002" },
+      },
+      answer: "gemini",
+      costMicros: 2,
+    },
+    {
+      model: "openai/gpt-5.4-mini",
+      response: {
+        model: "openai/gpt-5.4-mini",
+        choices: [{ message: { content: { answer: "openai" } } }],
+        usage: { prompt_tokens: 10, completion_tokens: 3, cost: null },
+      },
+      answer: "openai",
+      costMicros: null,
+    },
+    {
+      model: "anthropic/claude-sonnet-4.6",
+      response: {
+        model: "anthropic/claude-sonnet-4.6",
+        choices: [
+          { message: { content: '```json\n{"answer":"claude"}\n```' } },
+        ],
+        usage: { cost: 0.000003 },
+      },
+      answer: "claude",
+      costMicros: 3,
+    },
+  ])(
+    "normalizes structured responses from $model",
+    async ({ model, response, answer, costMicros }) => {
+      vi.stubEnv("OPENROUTER_API_KEY", "test-key");
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(Response.json(response)),
+      );
+
+      const result = await generateStructured({
+        model,
+        system: "Return the schema.",
+        payload: { company: "Muster GmbH" },
+        schema: z.object({ answer: z.string() }),
+        schemaName: "model_matrix_answer",
+      });
+
+      expect(result.model).toBe(model);
+      expect(result.output).toEqual({ answer });
+      expect(result.estimatedCostMicros).toBe(costMicros);
+    },
+  );
+
+  it("falls back from a successful HTTP response containing an API error", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "test-key");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({ error: { code: "provider_error", message: "failed" } }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          model: "test/fallback",
+          choices: [
+            { message: { content: JSON.stringify({ answer: "recovered" }) } },
+          ],
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await generateStructured({
+      model: "test/primary",
+      fallbackModel: "test/fallback",
+      system: "Return the schema.",
+      payload: {},
+      schema: z.object({ answer: z.string() }),
+      schemaName: "fallback_answer",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({
+      model: "test/fallback",
+      output: { answer: "recovered" },
+    });
   });
 });

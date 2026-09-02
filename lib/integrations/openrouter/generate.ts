@@ -5,32 +5,11 @@ import {
   fetchProvider,
   type ProviderRequestMetrics,
 } from "@/lib/integrations/http";
-
-const OpenRouterResponseSchema = z
-  .object({
-    model: z.string(),
-    choices: z
-      .array(
-        z.object({
-          finish_reason: z.string().nullable().optional(),
-          message: z.object({
-            content: z.union([z.string(), z.array(z.unknown()), z.null()]),
-            refusal: z.string().nullable().optional(),
-          }),
-        }),
-      )
-      .min(1),
-    usage: z
-      .object({
-        prompt_tokens: z.number().nonnegative().optional(),
-        completion_tokens: z.number().nonnegative().optional(),
-        total_tokens: z.number().nonnegative().optional(),
-        cost: z.number().nonnegative().nullable().optional(),
-      })
-      .passthrough()
-      .optional(),
-  })
-  .passthrough();
+import {
+  normalizeOpenRouterResponse,
+  OpenRouterResponseSchema,
+  parseStructuredContent,
+} from "@/lib/integrations/openrouter/response";
 
 export type StructuredGeneration<T> = {
   output: T;
@@ -79,6 +58,7 @@ export async function generateStructured<T>(input: {
         temperature: 0,
         max_tokens: input.maxTokens ?? 4_000,
         provider: { require_parameters: true },
+        plugins: [{ id: "response-healing" }],
         store: false,
       };
       const response = await fetchProvider(
@@ -96,27 +76,23 @@ export async function generateStructured<T>(input: {
         metrics,
         55_000,
       );
-      const choice = response.choices[0];
-      const content = choice.message.content;
-      if (typeof content !== "string" || !content.trim()) {
-        const reason = choice.message.refusal
-          ? ` refused the request: ${choice.message.refusal}`
-          : ` returned no structured text (finish reason: ${choice.finish_reason ?? "unknown"})`;
-        throw new Error(`OpenRouter model ${model}${reason}.`);
-      }
-      const output = input.schema.parse(JSON.parse(content));
-      const usage = (response.usage ?? {}) as Record<string, unknown>;
-      const cost =
-        typeof response.usage?.cost === "number" ? response.usage.cost : null;
+      const normalized = normalizeOpenRouterResponse(response, model);
+      const output = parseStructuredContent(
+        normalized.content,
+        input.schema,
+        normalized.model,
+      );
       return {
         output,
-        model: response.model,
+        model: normalized.model,
         requestPayload,
-        usage,
+        usage: normalized.usage,
         requestCount: Math.max(1, metrics.requestCount),
         durationMs: Date.now() - startedAt,
         estimatedCostMicros:
-          cost === null ? null : Math.round(cost * 1_000_000),
+          normalized.cost === null
+            ? null
+            : Math.round(normalized.cost * 1_000_000),
       };
     } catch (error) {
       lastError = error;

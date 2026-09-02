@@ -36,9 +36,14 @@ export async function fetchProvider<T extends z.ZodType>(
       signal,
     });
     if (response.ok) {
+      let body: unknown;
       try {
-        return schema.parse(await response.json());
+        body = await response.json();
       } catch {
+        console.error("Provider returned invalid JSON", {
+          host: new URL(url).hostname,
+          status: response.status,
+        });
         throw new ProviderError(
           `Provider response from ${new URL(url).hostname} did not match the expected schema.`,
           response.status,
@@ -46,6 +51,24 @@ export async function fetchProvider<T extends z.ZodType>(
           metrics?.requestCount ?? attempt + 1,
         );
       }
+      const parsed = schema.safeParse(body);
+      if (!parsed.success) {
+        console.error("Provider response schema mismatch", {
+          host: new URL(url).hostname,
+          status: response.status,
+          issues: parsed.error.issues.slice(0, 10).map((issue) => ({
+            code: issue.code,
+            path: issue.path.join("."),
+          })),
+        });
+        throw new ProviderError(
+          `Provider response from ${new URL(url).hostname} did not match the expected schema.`,
+          response.status,
+          undefined,
+          metrics?.requestCount ?? attempt + 1,
+        );
+      }
+      return parsed.data;
     }
     const retryAfter = response.headers.get("retry-after");
     const retryAfterMs = retryAfter ? Number(retryAfter) * 1000 : undefined;
