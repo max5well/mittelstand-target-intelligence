@@ -23,8 +23,7 @@ const ReviewSchema = z.object({
 });
 
 export type EvalPayloadState =
-  | { ok: true; traces: CopilotPayloadTrace[] }
-  | { ok: false; message: string };
+  { ok: true; traces: CopilotPayloadTrace[] } | { ok: false; message: string };
 
 export async function loadCopilotPayloads(
   runId: string,

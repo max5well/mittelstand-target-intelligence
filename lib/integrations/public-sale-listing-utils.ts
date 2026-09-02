@@ -95,9 +95,9 @@ export function parseFirstInteger(value?: string) {
 export function isExplicitlyOutsideGermany(value?: string | null) {
   return Boolean(
     value &&
-      /(?:Österreich|Austria|Schweiz|Switzerland|Suisse|Liechtenstein|Frankreich|France|Italien|Italy|Niederlande|Netherlands|Belgien|Belgium|Polen|Poland|Spanien|Spain|Portugal|Tschechien|Czech(?:ia)?|Dänemark|Denmark)/i.test(
-        value,
-      ),
+    /(?:Österreich|Austria|Schweiz|Switzerland|Suisse|Liechtenstein|Frankreich|France|Italien|Italy|Niederlande|Netherlands|Belgien|Belgium|Polen|Poland|Spanien|Spain|Portugal|Tschechien|Czech(?:ia)?|Dänemark|Denmark)/i.test(
+      value,
+    ),
   );
 }
 
