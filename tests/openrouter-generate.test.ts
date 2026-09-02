@@ -14,7 +14,12 @@ describe("OpenRouter structured generation", () => {
       Response.json({
         model: "test/model",
         choices: [{ message: { content: JSON.stringify({ answer: "ok" }) } }],
-        usage: { total_tokens: 12 },
+        usage: {
+          prompt_tokens: 8,
+          completion_tokens: 4,
+          total_tokens: 12,
+          cost: null,
+        },
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -49,7 +54,60 @@ describe("OpenRouter structured generation", () => {
       },
       temperature: 0,
       max_tokens: 500,
+      provider: { require_parameters: true },
       store: false,
     });
+    expect(result.estimatedCostMicros).toBeNull();
+  });
+
+  it("falls back when a provider returns no structured text", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "test-key");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          model: "test/primary",
+          choices: [
+            {
+              finish_reason: "content_filter",
+              message: { content: null, refusal: "Request refused" },
+            },
+          ],
+          usage: {
+            prompt_tokens: 8,
+            completion_tokens: 0,
+            total_tokens: 8,
+            cost: null,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          model: "test/fallback",
+          choices: [
+            { message: { content: JSON.stringify({ answer: "ok" }) } },
+          ],
+          usage: {
+            prompt_tokens: 8,
+            completion_tokens: 4,
+            total_tokens: 12,
+            cost: 0.00001,
+          },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await generateStructured({
+      model: "test/primary",
+      fallbackModel: "test/fallback",
+      system: "Return the schema.",
+      payload: { company: "Muster GmbH" },
+      schema: z.object({ answer: z.string() }),
+      schemaName: "test_answer",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.model).toBe("test/fallback");
+    expect(result.output).toEqual({ answer: "ok" });
   });
 });

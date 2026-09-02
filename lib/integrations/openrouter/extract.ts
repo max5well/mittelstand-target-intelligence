@@ -64,7 +64,11 @@ const OpenRouterResponseSchema = z
     choices: z
       .array(
         z.object({
-          message: z.object({ content: z.string() }),
+          finish_reason: z.string().nullable().optional(),
+          message: z.object({
+            content: z.union([z.string(), z.array(z.unknown()), z.null()]),
+            refusal: z.string().nullable().optional(),
+          }),
         }),
       )
       .min(1),
@@ -73,7 +77,7 @@ const OpenRouterResponseSchema = z
         prompt_tokens: z.number().int().nonnegative().optional(),
         completion_tokens: z.number().int().nonnegative().optional(),
         total_tokens: z.number().int().nonnegative().optional(),
-        cost: z.number().nonnegative().optional(),
+        cost: z.number().nonnegative().nullable().optional(),
       })
       .passthrough()
       .optional(),
@@ -148,6 +152,7 @@ export async function extractIntelligence(
         },
         temperature: 0,
         max_tokens: MAX_OUTPUT_TOKENS,
+        provider: { require_parameters: true },
       }),
     },
     OpenRouterResponseSchema,
@@ -156,9 +161,15 @@ export async function extractIntelligence(
     OPENROUTER_REQUEST_TIMEOUT_MS,
   );
 
-  const parsed = IntelligenceOutputSchema.parse(
-    JSON.parse(response.choices[0].message.content),
-  );
+  const choice = response.choices[0];
+  const content = choice.message.content;
+  if (typeof content !== "string" || !content.trim()) {
+    const reason = choice.message.refusal
+      ? ` refused the request: ${choice.message.refusal}`
+      : ` returned no structured text (finish reason: ${choice.finish_reason ?? "unknown"})`;
+    throw new Error(`OpenRouter model ${response.model}${reason}.`);
+  }
+  const parsed = IntelligenceOutputSchema.parse(JSON.parse(content));
   const output = validateEvidence(parsed, inputSources);
   return {
     output,

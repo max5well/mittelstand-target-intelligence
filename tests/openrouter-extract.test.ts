@@ -89,6 +89,7 @@ describe("OpenRouter evidence extraction", () => {
       type: "json_schema",
       json_schema: { strict: true },
     });
+    expect(body.provider).toEqual({ require_parameters: true });
     expect(body.max_tokens).toBe(4_000);
     expect(result).toMatchObject({
       estimatedTokens: expect.any(Number),

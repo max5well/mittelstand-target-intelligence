@@ -10,14 +10,22 @@ const OpenRouterResponseSchema = z
   .object({
     model: z.string(),
     choices: z
-      .array(z.object({ message: z.object({ content: z.string() }) }))
+      .array(
+        z.object({
+          finish_reason: z.string().nullable().optional(),
+          message: z.object({
+            content: z.union([z.string(), z.array(z.unknown()), z.null()]),
+            refusal: z.string().nullable().optional(),
+          }),
+        }),
+      )
       .min(1),
     usage: z
       .object({
         prompt_tokens: z.number().nonnegative().optional(),
         completion_tokens: z.number().nonnegative().optional(),
         total_tokens: z.number().nonnegative().optional(),
-        cost: z.number().nonnegative().optional(),
+        cost: z.number().nonnegative().nullable().optional(),
       })
       .passthrough()
       .optional(),
@@ -70,6 +78,7 @@ export async function generateStructured<T>(input: {
         },
         temperature: 0,
         max_tokens: input.maxTokens ?? 4_000,
+        provider: { require_parameters: true },
         store: false,
       };
       const response = await fetchProvider(
@@ -87,9 +96,15 @@ export async function generateStructured<T>(input: {
         metrics,
         55_000,
       );
-      const output = input.schema.parse(
-        JSON.parse(response.choices[0].message.content),
-      );
+      const choice = response.choices[0];
+      const content = choice.message.content;
+      if (typeof content !== "string" || !content.trim()) {
+        const reason = choice.message.refusal
+          ? ` refused the request: ${choice.message.refusal}`
+          : ` returned no structured text (finish reason: ${choice.finish_reason ?? "unknown"})`;
+        throw new Error(`OpenRouter model ${model}${reason}.`);
+      }
+      const output = input.schema.parse(JSON.parse(content));
       const usage = (response.usage ?? {}) as Record<string, unknown>;
       const cost =
         typeof response.usage?.cost === "number" ? response.usage.cost : null;
