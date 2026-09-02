@@ -25,7 +25,7 @@
     "format": "prettier --check .",
     "format:write": "prettier --write .",
     "test": "vitest run",
-    "test:rls": "supabase start && supabase db reset --local && node scripts/verify-rls-local.mjs",
+    "test:rls": "supabase start --exclude realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor && node scripts/verify-rls-local.mjs",
     "test:e2e": "playwright test"
   },
   "dependencies": {
