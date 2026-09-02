@@ -2,11 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildWebsiteVerificationProfile,
   isRelevantTavilySource,
+  openRouterDailyTokenLimit,
   selectOfficialWebsiteCandidate,
   selectOfficialWebsiteCandidates,
   verifyOfficialWebsiteEvidence,
 } from "@/lib/enrichment/external-providers";
 import {
+  buildCompanyResearchQuery,
   buildCompanyWebsiteQuery,
   FirecrawlProvider,
 } from "@/lib/integrations/web-research";
@@ -32,6 +34,34 @@ describe("Tavily company evidence relevance", () => {
       isRelevantTavilySource(
         "DW Interieur Construction UG (haftungsbeschränkt)",
         source("DW Interieur Construction UG, Haan"),
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps a distinctive brand match when the legal name adds Germany", () => {
+    expect(
+      isRelevantTavilySource(
+        "Kelvion Germany GmbH",
+        source(
+          "Kelvion expands its heat exchanger portfolio",
+          "Kelvion supplies thermal solutions for industrial customers worldwide.",
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps first-party sources from the verified website", () => {
+    expect(
+      isRelevantTavilySource(
+        "Kelvion Germany GmbH",
+        {
+          ...source(
+            "Global locations",
+            "Worldwide production and service locations",
+          ),
+          url: "https://www.kelvion.com/company/global-locations",
+        },
+        "https://kelvion.com",
       ),
     ).toBe(true);
   });
@@ -138,6 +168,12 @@ describe("Tavily company evidence relevance", () => {
     ).toBe('"Anästhesie MVZ Würzburg" Würzburg Website Impressum');
   });
 
+  it("uses the core brand rather than the legal entity and URL for research", () => {
+    expect(buildCompanyResearchQuery("Kelvion Germany GmbH", "Bochum")).toBe(
+      '"Kelvion" Bochum Unternehmen News Presse',
+    );
+  });
+
   it("uses the search-result address when paid detail hydration is unavailable", () => {
     expect(
       buildWebsiteVerificationProfile({
@@ -155,6 +191,14 @@ describe("Tavily company evidence relevance", () => {
       addressLine: "Beispielstraße 12",
       postcode: "44623",
     });
+  });
+});
+
+describe("OpenRouter spending guard", () => {
+  it("uses a bounded default and ignores malformed overrides", () => {
+    expect(openRouterDailyTokenLimit()).toBe(100_000);
+    expect(openRouterDailyTokenLimit("25000")).toBe(25_000);
+    expect(openRouterDailyTokenLimit("unlimited")).toBe(100_000);
   });
 });
 

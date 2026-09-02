@@ -28,6 +28,34 @@ export type OwnershipCategory =
   | "Widely held"
   | "Unknown";
 
+export type SaleListing = {
+  active: boolean;
+  provider: string;
+  providerLabel: string;
+  listingId: string;
+  sourceUrl: string;
+  askingPriceCents: number | null;
+  location: string | null;
+  retrievedAt: string;
+};
+
+export type SaleOpportunity = {
+  id: string;
+  listingId: string;
+  title: string;
+  originalTitle: string;
+  description: string;
+  location: string;
+  industry: string;
+  employees: number | null;
+  revenueCents: number | null;
+  ebitdaCents: number | null;
+  askingPriceCents: number | null;
+  agentCompany: string;
+  sourceUrl: string;
+  updatedAt: string;
+};
+
 export type Company = {
   id: string;
   openregisterCompanyId: string;
@@ -76,6 +104,7 @@ export type Company = {
   updatedAt: string;
   sourceType: "reported" | "estimated";
   fictional: boolean;
+  saleListing: SaleListing | null;
 };
 
 export type Job = {

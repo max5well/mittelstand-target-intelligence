@@ -2,6 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/db/admin";
+import { recoverConflictingJobLease } from "@/lib/enrichment/job-leases";
 import { ApolloProvider } from "@/lib/integrations/apollo";
 import {
   creditsForProviderOutcome,
@@ -14,7 +15,14 @@ import {
   TavilyProvider,
   type WebSource,
 } from "@/lib/integrations/web-research";
-import { SafePublicHttpUrlSchema, isPublicHttpUrl } from "@/lib/url-safety";
+import {
+  estimateOpenRouterTokens,
+  extractIntelligence,
+  type ReviewedIntelligence,
+} from "@/lib/integrations/openrouter/extract";
+import { isOpenRegisterId } from "@/lib/openregister-id";
+import { isPublicHttpUrl } from "@/lib/url-safety";
+import { resolvePublicHttpUrl } from "@/lib/url-safety-server";
 
 export const externalProviderStages = [
   "website_discovery",
@@ -37,6 +45,66 @@ const configuration = {
   },
   tavily_research: { provider: "tavily", credits: 2, endpoint: "POST /search" },
 } as const;
+
+const DEFAULT_OPENROUTER_DAILY_TOKEN_LIMIT = 100_000;
+
+type ProviderUsageEvent = {
+  workspace_id: string;
+  provider: string;
+  endpoint: string;
+  enrichment_job_id: string;
+  estimated_credits: number;
+  actual_credits: number | null;
+  request_count: number;
+  http_status: number | null;
+  duration_ms: number;
+  usage_unit?: "provider_credits" | "tokens";
+  estimated_units?: number;
+  actual_units?: number;
+  input_units?: number;
+  output_units?: number;
+  actual_cost_micros?: number;
+};
+
+export function openRouterDailyTokenLimit(
+  value = process.env.OPENROUTER_DAILY_TOKEN_LIMIT,
+) {
+  const parsed = Number(value ?? DEFAULT_OPENROUTER_DAILY_TOKEN_LIMIT);
+  return Number.isSafeInteger(parsed) && parsed > 0
+    ? parsed
+    : DEFAULT_OPENROUTER_DAILY_TOKEN_LIMIT;
+}
+
+async function hasOpenRouterDailyBudget(
+  supabase: ReturnType<typeof createAdminClient>,
+  estimatedTokens: number,
+) {
+  const startOfDay = new Date();
+  startOfDay.setUTCHours(0, 0, 0, 0);
+  let usedTokens = 0;
+  const pageSize = 500;
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("provider_usage_events")
+      .select("actual_units,estimated_units")
+      .eq("provider", "openrouter")
+      .gte("occurred_at", startOfDay.toISOString())
+      .order("id", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error)
+      throw new Error(`Unable to check OpenRouter budget: ${error.message}`);
+    const page = data ?? [];
+    usedTokens += page.reduce(
+      (total, event) =>
+        total + Number(event.actual_units ?? event.estimated_units ?? 0),
+      0,
+    );
+    if (usedTokens + estimatedTokens > openRouterDailyTokenLimit())
+      return false;
+    if (page.length < pageSize) break;
+  }
+  return usedTokens + estimatedTokens <= openRouterDailyTokenLimit();
+}
 
 export async function runExternalProviderEnrichment(input: {
   workspaceId: string;
@@ -61,7 +129,7 @@ export async function runExternalProviderEnrichment(input: {
       `${config.provider} needs a verified company website before this action can run.`,
     );
   const safeWebsite = company.website_url
-    ? SafePublicHttpUrlSchema.parse(company.website_url)
+    ? await resolvePublicHttpUrl(company.website_url)
     : null;
   const { data: location } = await supabase
     .from("company_locations")
@@ -96,34 +164,35 @@ export async function runExternalProviderEnrichment(input: {
 
   const startedAt = new Date();
   const leaseExpiresAt = new Date(startedAt.getTime() + 55_000);
-  const { data: job, error: jobError } = await supabase
-    .from("enrichment_jobs")
-    .insert({
-      workspace_id: input.workspaceId,
-      company_id: input.companyId,
-      provider: config.provider,
-      job_type: input.stage,
-      status: "running",
-      idempotency_key: `${input.companyId}:${input.stage}:${randomUUID()}`,
-      payload: { website: safeWebsite },
-      attempt_count: 1,
-      estimated_credits: config.credits,
-      started_at: startedAt.toISOString(),
-      heartbeat_at: startedAt.toISOString(),
-      lease_expires_at: leaseExpiresAt.toISOString(),
-    })
-    .select("id")
-    .single();
-  if (jobError?.code === "23505") {
-    const { data: active } = await supabase
+  const insertJob = () =>
+    supabase
       .from("enrichment_jobs")
-      .select("id,status,actual_credits,completed_at,payload")
-      .eq("workspace_id", input.workspaceId)
-      .eq("company_id", input.companyId)
-      .eq("provider", config.provider)
-      .eq("job_type", input.stage)
-      .eq("status", "running")
-      .maybeSingle();
+      .insert({
+        workspace_id: input.workspaceId,
+        company_id: input.companyId,
+        provider: config.provider,
+        job_type: input.stage,
+        status: "running",
+        idempotency_key: `${input.companyId}:${input.stage}:${randomUUID()}`,
+        payload: { website: safeWebsite },
+        attempt_count: 1,
+        estimated_credits: config.credits,
+        started_at: startedAt.toISOString(),
+        heartbeat_at: startedAt.toISOString(),
+        lease_expires_at: leaseExpiresAt.toISOString(),
+      })
+      .select("id")
+      .single();
+  let { data: job, error: jobError } = await insertJob();
+  if (jobError?.code === "23505") {
+    const conflict = await recoverConflictingJobLease(supabase, {
+      workspaceId: input.workspaceId,
+      companyId: input.companyId,
+      provider: config.provider,
+      jobType: input.stage,
+    });
+    if (conflict.retry) ({ data: job, error: jobError } = await insertJob());
+    const active = conflict.active;
     if (active)
       return { job: active, skipped: true, available: false, running: true };
   }
@@ -133,6 +202,8 @@ export async function runExternalProviderEnrichment(input: {
   let httpStatus = 200;
   let requestCount = 0;
   let reportedCredits: number | null = null;
+  let sourceMetrics: Record<string, unknown> = {};
+  const supplementalUsageEvents: ProviderUsageEvent[] = [];
   try {
     const domain = safeWebsite
       ? new URL(safeWebsite).hostname.replace(/^www\./, "")
@@ -195,19 +266,117 @@ export async function runExternalProviderEnrichment(input: {
         });
         requestCount = provider.lastRequestCount;
       }
-      returned = await persistWebSources(
+      const persistence = await persistWebSources(
         input.workspaceId,
         input.companyId,
         company.legal_name,
         sources,
+        safeWebsite,
       );
+      returned = persistence.persisted.length;
+      let aiReview: "disabled" | "capped" | "succeeded" | "failed" = "disabled";
+      let claimCount = 0;
+      const aiTokenEstimate = estimateOpenRouterTokens(persistence.accepted);
+      let aiTokensUsed: number | null = null;
+      if (process.env.OPENROUTER_API_KEY && persistence.accepted.length) {
+        const hasBudget = await hasOpenRouterDailyBudget(
+          supabase,
+          aiTokenEstimate,
+        );
+        if (!hasBudget) {
+          aiReview = "capped";
+        } else {
+          const reviewStartedAt = Date.now();
+          try {
+            const review = await extractIntelligence(
+              company.legal_name,
+              persistence.accepted,
+            );
+            if (review) {
+              const promptTokens = review.usage?.prompt_tokens ?? 0;
+              const completionTokens = review.usage?.completion_tokens ?? 0;
+              aiTokensUsed =
+                review.usage?.total_tokens ?? promptTokens + completionTokens;
+              supplementalUsageEvents.push({
+                workspace_id: input.workspaceId,
+                provider: "openrouter",
+                endpoint: `POST /api/v1/chat/completions (${review.model})`,
+                enrichment_job_id: job.id,
+                estimated_credits: 0,
+                actual_credits: 0,
+                request_count: review.requestCount,
+                http_status: 200,
+                duration_ms: Date.now() - reviewStartedAt,
+                usage_unit: "tokens",
+                estimated_units: review.estimatedTokens,
+                actual_units: aiTokensUsed,
+                input_units: promptTokens,
+                output_units: completionTokens,
+                actual_cost_micros:
+                  review.usage?.cost == null
+                    ? undefined
+                    : Math.round(review.usage.cost * 1_000_000),
+              });
+              claimCount = await persistWebClaims(
+                input.workspaceId,
+                input.companyId,
+                persistence.persisted,
+                review,
+              );
+              aiReview = "succeeded";
+            }
+          } catch (error) {
+            aiReview = "failed";
+            supplementalUsageEvents.push({
+              workspace_id: input.workspaceId,
+              provider: "openrouter",
+              endpoint: "POST /api/v1/chat/completions",
+              enrichment_job_id: job.id,
+              estimated_credits: 0,
+              actual_credits: 0,
+              request_count:
+                error instanceof ProviderError ? error.requestCount : 1,
+              http_status: error instanceof ProviderError ? error.status : null,
+              duration_ms: Date.now() - reviewStartedAt,
+              usage_unit: "tokens",
+              estimated_units: aiTokenEstimate,
+              actual_units: 0,
+            });
+            console.error("[enrichment] OpenRouter evidence review failed", {
+              companyId: input.companyId,
+              stage: input.stage,
+              message: error instanceof Error ? error.message : "Unknown error",
+            });
+          }
+        }
+      }
+      console.info("[enrichment] web source processing completed", {
+        companyId: input.companyId,
+        stage: input.stage,
+        candidates: persistence.candidateCount,
+        accepted: returned,
+        rejected: persistence.candidateCount - returned,
+        aiReview,
+        claimCount,
+        aiTokenEstimate,
+        aiTokensUsed,
+      });
+      sourceMetrics = {
+        candidates: persistence.candidateCount,
+        rejected: persistence.candidateCount - returned,
+        rejectionReasons: persistence.rejectionReasons,
+        aiReview,
+        claimCount,
+        aiTokenEstimate,
+        aiTokensUsed,
+      };
     }
 
     const completedAt = new Date();
     const available = returned > 0;
     const actualCredits =
       process.env.MOCK_PROVIDERS === "false"
-        ? (reportedCredits ?? config.credits * Math.max(1, requestCount))
+        ? (reportedCredits ?? config.credits)
         : 0;
     const [jobResult] = await Promise.all([
       supabase
@@ -221,25 +390,35 @@ export async function runExternalProviderEnrichment(input: {
             website: safeWebsite,
             available,
             returned,
+            ...sourceMetrics,
           },
         })
         .eq("id", job.id)
         .select("id,status,actual_credits,completed_at,payload")
         .single(),
-      supabase.from("provider_usage_events").insert({
-        workspace_id: input.workspaceId,
-        provider: config.provider,
-        endpoint: config.endpoint,
-        enrichment_job_id: job.id,
-        estimated_credits: config.credits,
-        actual_credits: actualCredits,
-        request_count: Math.max(1, requestCount),
-        http_status: httpStatus,
-        duration_ms: completedAt.getTime() - startedAt.getTime(),
-      }),
+      supabase.from("provider_usage_events").insert([
+        {
+          workspace_id: input.workspaceId,
+          provider: config.provider,
+          endpoint: config.endpoint,
+          enrichment_job_id: job.id,
+          estimated_credits: config.credits,
+          actual_credits: actualCredits,
+          request_count: Math.max(1, requestCount),
+          http_status: httpStatus,
+          duration_ms: completedAt.getTime() - startedAt.getTime(),
+        },
+        ...supplementalUsageEvents,
+      ]),
     ]);
     if (jobResult.error) throw new Error(jobResult.error.message);
-    return { job: jobResult.data, skipped: false, available, returned };
+    return {
+      job: jobResult.data,
+      skipped: false,
+      available,
+      returned,
+      ...sourceMetrics,
+    };
   } catch (error) {
     if (error instanceof ProviderError) httpStatus = error.status;
     const attempts =
@@ -265,17 +444,20 @@ export async function runExternalProviderEnrichment(input: {
           },
         })
         .eq("id", job.id),
-      supabase.from("provider_usage_events").insert({
-        workspace_id: input.workspaceId,
-        provider: config.provider,
-        endpoint: config.endpoint,
-        enrichment_job_id: job.id,
-        estimated_credits: config.credits,
-        actual_credits: actualCredits,
-        request_count: attempts,
-        http_status: httpStatus,
-        duration_ms: completedAt.getTime() - startedAt.getTime(),
-      }),
+      supabase.from("provider_usage_events").insert([
+        {
+          workspace_id: input.workspaceId,
+          provider: config.provider,
+          endpoint: config.endpoint,
+          enrichment_job_id: job.id,
+          estimated_credits: config.credits,
+          actual_credits: actualCredits,
+          request_count: attempts,
+          http_status: httpStatus,
+          duration_ms: completedAt.getTime() - startedAt.getTime(),
+        },
+        ...supplementalUsageEvents,
+      ]),
     ]);
     throw error;
   }
@@ -338,35 +520,39 @@ async function runWebsiteDiscovery(input: {
 
   const startedAt = new Date();
   const leaseExpiresAt = new Date(startedAt.getTime() + 55_000);
-  const { data: job, error: jobError } = await supabase
-    .from("enrichment_jobs")
-    .insert({
-      workspace_id: input.workspaceId,
-      company_id: input.companyId,
-      search_run_id: input.searchRunId ?? null,
-      provider: "tavily",
-      job_type: "website_discovery",
-      status: "running",
-      idempotency_key: `${input.companyId}:website_discovery:${randomUUID()}`,
-      payload: { legalName: company.legal_name, city: location?.city ?? null },
-      attempt_count: 1,
-      estimated_credits: input.searchRunId ? 4 : 14,
-      started_at: startedAt.toISOString(),
-      heartbeat_at: startedAt.toISOString(),
-      lease_expires_at: leaseExpiresAt.toISOString(),
-    })
-    .select("id")
-    .single();
-  if (jobError?.code === "23505") {
-    const { data: active } = await supabase
+  const insertJob = () =>
+    supabase
       .from("enrichment_jobs")
-      .select("id,status,actual_credits,completed_at,payload")
-      .eq("workspace_id", input.workspaceId)
-      .eq("company_id", input.companyId)
-      .eq("provider", "tavily")
-      .eq("job_type", "website_discovery")
-      .eq("status", "running")
-      .maybeSingle();
+      .insert({
+        workspace_id: input.workspaceId,
+        company_id: input.companyId,
+        search_run_id: input.searchRunId ?? null,
+        provider: "tavily",
+        job_type: "website_discovery",
+        status: "running",
+        idempotency_key: `${input.companyId}:website_discovery:${randomUUID()}`,
+        payload: {
+          legalName: company.legal_name,
+          city: location?.city ?? null,
+        },
+        attempt_count: 1,
+        estimated_credits: input.searchRunId ? 4 : 14,
+        started_at: startedAt.toISOString(),
+        heartbeat_at: startedAt.toISOString(),
+        lease_expires_at: leaseExpiresAt.toISOString(),
+      })
+      .select("id")
+      .single();
+  let { data: job, error: jobError } = await insertJob();
+  if (jobError?.code === "23505") {
+    const conflict = await recoverConflictingJobLease(supabase, {
+      workspaceId: input.workspaceId,
+      companyId: input.companyId,
+      provider: "tavily",
+      jobType: "website_discovery",
+    });
+    if (conflict.retry) ({ data: job, error: jobError } = await insertJob());
+    const active = conflict.active;
     if (active)
       return { job: active, skipped: true, available: false, running: true };
   }
@@ -423,7 +609,7 @@ async function runWebsiteDiscovery(input: {
         const usage = telemetry();
         const actualCredits =
           process.env.MOCK_PROVIDERS === "false"
-            ? (usage.reportedCredits ?? 2 * Math.max(1, usage.requestCount))
+            ? (usage.reportedCredits ?? 2)
             : 0;
         attempts.push({
           provider,
@@ -495,8 +681,7 @@ async function runWebsiteDiscovery(input: {
         allowOpenRegisterLookup &&
         !openRegisterLookupAttempted &&
         !lookupBlocked &&
-        company.openregister_company_id &&
-        !company.openregister_company_id.startsWith("manual:")
+        isOpenRegisterId(company.openregister_company_id)
       ) {
         for (const candidate of candidates.slice(0, 1)) {
           openRegisterLookupAttempted = true;
@@ -519,10 +704,7 @@ async function runWebsiteDiscovery(input: {
               endpoint: "GET /v0/search/lookup",
               enrichment_job_id: job.id,
               estimated_credits: 10,
-              actual_credits:
-                process.env.MOCK_PROVIDERS === "false"
-                  ? 10 * Math.max(1, lookupMetrics.requestCount)
-                  : 0,
+              actual_credits: process.env.MOCK_PROVIDERS === "false" ? 10 : 0,
               request_count: Math.max(1, lookupMetrics.requestCount),
               http_status: 200,
               duration_ms: Date.now() - requestStartedAt,
@@ -637,6 +819,7 @@ async function runWebsiteDiscovery(input: {
         input.companyId,
         company.legal_name,
         selectedSources,
+        verifiedWebsite,
       );
     }
 
@@ -837,17 +1020,31 @@ async function persistWebSources(
   companyId: string,
   companyName: string,
   sources: WebSource[],
+  verifiedWebsite: string | null,
 ) {
-  const relevantSources = sources.filter((source) =>
-    source.provider === "tavily"
-      ? isRelevantTavilySource(companyName, source)
-      : true,
-  );
-  if (!relevantSources.length) return 0;
-  const { error } = await createAdminClient()
+  const rejectionReasons: Record<string, number> = {};
+  const accepted = sources.filter((source) => {
+    const rejectionReason = webSourceRejectionReason(
+      companyName,
+      source,
+      verifiedWebsite,
+    );
+    if (!rejectionReason) return true;
+    rejectionReasons[rejectionReason] =
+      (rejectionReasons[rejectionReason] ?? 0) + 1;
+    return false;
+  });
+  if (!accepted.length)
+    return {
+      candidateCount: sources.length,
+      accepted,
+      persisted: [] as Array<{ id: string; url: string }>,
+      rejectionReasons,
+    };
+  const { data, error } = await createAdminClient()
     .from("web_sources")
     .insert(
-      relevantSources.map((source) => ({
+      accepted.map((source) => ({
         workspace_id: workspaceId,
         company_id: companyId,
         provider: source.provider,
@@ -856,21 +1053,153 @@ async function persistWebSources(
         title: source.title,
         publication_date: toDate(source.publishedAt),
         result_score: source.score,
-        supporting_excerpt: source.content.slice(0, 2000),
+        supporting_excerpt: formatSourceExcerpt(source.content),
         retrieved_at: source.retrievedAt,
         raw_payload: source,
       })),
-    );
+    )
+    .select("id,url");
   if (error) throw new Error(error.message);
-  return relevantSources.length;
+  return {
+    candidateCount: sources.length,
+    accepted,
+    persisted: data ?? [],
+    rejectionReasons,
+  };
 }
 
-export function isRelevantTavilySource(companyName: string, source: WebSource) {
+function webSourceRejectionReason(
+  companyName: string,
+  source: WebSource,
+  verifiedWebsite: string | null,
+) {
+  if (!isPublicHttpUrl(source.url)) return "unsafe_url";
+  if (normalizeCompanyText(source.content).length < 80)
+    return "too_little_text";
+  if (
+    source.provider === "firecrawl" &&
+    verifiedWebsite &&
+    !isSameWebsite(source.url, verifiedWebsite)
+  )
+    return "off_verified_domain";
+  if (
+    source.provider === "tavily" &&
+    !isRelevantTavilySource(companyName, source, verifiedWebsite)
+  )
+    return "company_mismatch";
+  return null;
+}
+
+export function isRelevantTavilySource(
+  companyName: string,
+  source: WebSource,
+  verifiedWebsite?: string | null,
+) {
+  if (verifiedWebsite && isSameWebsite(source.url, verifiedWebsite))
+    return true;
   const companyStem = companyNameStem(companyName);
   const evidence = normalizeCompanyText(
     `${source.title ?? ""} ${source.content}`,
   );
-  return companyStem.length >= 5 && evidence.includes(companyStem);
+  if (companyStem.length >= 5 && evidence.includes(companyStem)) return true;
+  const brandTokens = companyStem
+    .split(" ")
+    .filter(
+      (token) => token.length >= 5 && !COMPANY_NAME_NOISE_TOKENS.has(token),
+    );
+  if (!brandTokens.length) return false;
+  const matchedTokens = brandTokens.filter((token) => evidence.includes(token));
+  return matchedTokens.length >= Math.min(2, brandTokens.length);
+}
+
+async function persistWebClaims(
+  workspaceId: string,
+  companyId: string,
+  persistedSources: Array<{ id: string; url: string }>,
+  review: ReviewedIntelligence,
+) {
+  const sourceIdByUrl = new Map(
+    persistedSources.map((source) => [source.url, source.id]),
+  );
+  const rows = review.output.claims.flatMap((claim) => {
+    const sourceIds = claim.source_urls.flatMap((url) => {
+      const id = sourceIdByUrl.get(url);
+      return id ? [id] : [];
+    });
+    if (sourceIds.length !== claim.source_urls.length) return [];
+    return [
+      {
+        workspace_id: workspaceId,
+        company_id: companyId,
+        claim_type: claim.type,
+        claim_text: claim.claim,
+        confidence: claim.confidence,
+        source_ids: sourceIds,
+        model: review.model,
+        prompt_version: review.promptVersion,
+        schema_version: review.schemaVersion,
+        token_usage: review.usage,
+      },
+    ];
+  });
+  if (!rows.length) return 0;
+  const supabase = createAdminClient();
+  const { data: existing, error: existingError } = await supabase
+    .from("web_claims")
+    .select("claim_type,claim_text")
+    .eq("workspace_id", workspaceId)
+    .eq("company_id", companyId);
+  if (existingError) throw new Error(existingError.message);
+  const existingKeys = new Set(
+    (existing ?? []).map(
+      (claim) => `${claim.claim_type}\u0000${claim.claim_text}`,
+    ),
+  );
+  const newRows = rows.filter(
+    (row) => !existingKeys.has(`${row.claim_type}\u0000${row.claim_text}`),
+  );
+  if (!newRows.length) return 0;
+  const { error } = await supabase.from("web_claims").insert(newRows);
+  if (error) throw new Error(error.message);
+  return newRows.length;
+}
+
+const COMPANY_NAME_NOISE_TOKENS = new Set([
+  "deutschland",
+  "germany",
+  "german",
+  "holding",
+  "gruppe",
+  "group",
+]);
+
+function isSameWebsite(first: string, second: string) {
+  try {
+    const firstHost = new URL(first).hostname
+      .toLowerCase()
+      .replace(/^www\./, "");
+    const secondHost = new URL(second).hostname
+      .toLowerCase()
+      .replace(/^www\./, "");
+    return (
+      firstHost === secondHost ||
+      firstHost.endsWith(`.${secondHost}`) ||
+      secondHost.endsWith(`.${firstHost}`)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function formatSourceExcerpt(content: string) {
+  return content
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/^#{1,6}\s*/gm, "")
+    .replace(/[*_`>]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
 }
 
 function normalizeCompanyText(value: string) {

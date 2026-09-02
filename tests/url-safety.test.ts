@@ -9,7 +9,12 @@ describe("public website URL validation", () => {
     "http://169.254.169.254/latest/meta-data",
     "http://10.0.0.1",
     "http://192.168.1.1",
+    "http://100.64.0.1",
+    "http://100.127.255.254",
     "http://[::1]",
+    "http://[::ffff:127.0.0.1]",
+    "http://[::ffff:10.0.0.1]",
+    "http://[::ffff:7f00:1]",
   ])("rejects non-public target %s", (value) => {
     expect(isPublicHttpUrl(value)).toBe(false);
     expect(SafePublicHttpUrlSchema.safeParse(value).success).toBe(false);

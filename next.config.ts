@@ -7,7 +7,7 @@ const contentSecurityPolicy = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  `connect-src 'self'${isDevelopment ? " ws: http://localhost:*" : ""} https://tile.openstreetmap.org https://*.supabase.co https://api.openregister.de https://api.apollo.io https://api.firecrawl.dev https://api.tavily.com https://api.openai.com`,
+  `connect-src 'self'${isDevelopment ? " ws: http://localhost:*" : ""} https://tile.openstreetmap.org https://*.supabase.co https://api.openregister.de https://api.apollo.io https://api.firecrawl.dev https://api.tavily.com`,
   "worker-src 'self' blob:",
   "frame-ancestors 'none'",
   "base-uri 'self'",

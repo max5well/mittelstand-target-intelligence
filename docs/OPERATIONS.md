@@ -11,6 +11,14 @@
 
 Do not bulk-run enrichment as a health check. A single controlled target is sufficient.
 
+OpenRouter evidence review has a deployment-wide UTC-day token guard (`OPENROUTER_DAILY_TOKEN_LIMIT`, default 100,000). Its ledger rows use `usage_unit=tokens`, retain input/output/total tokens, and store the response-reported cost in micro-dollars. Review the provider dashboard and this ledger before raising the limit.
+
+## con|cess source authorization
+
+`CONCESS_IMPORT_ENABLED` must remain `false` in every environment until an authorized con|cess/MatchBridge representative confirms in writing that automated retrieval, internal storage, refresh, and display of the public German sale listings are permitted for this application. Archive that permission with its scope and date, then set the flag only in the approved environment.
+
+The source currently publishes no `robots.txt` policy at `/robots.txt` (HTTP 404 observed on 2026-09-02). This is not a license. The importer checks the endpoint on every run, blocks on an explicit disallow or an unverifiable server response, fetches pages serially with a delay, and aborts the whole import if the expected listing markup disappears.
+
 ## Error monitoring and alerts
 
 All uncaught Next.js server errors and caught API failures emit one-line JSON to Vercel Runtime Logs. Each client-safe API error includes an `errorId` that can be searched in those logs.
@@ -53,7 +61,7 @@ Never use an anonymous key for exports, and never export multiple workspaces int
 
 ## Stuck-job recovery
 
-Provider jobs receive a 55-second lease; each provider attempt has a 15-second timeout. The daily discovery route marks expired `running` jobs failed and logs the count. A failed job remains retryable. Investigate repeated recoveries before increasing time limits.
+Provider jobs receive a 55-second lease; normal provider attempts have a 15-second timeout and OpenRouter reviews have a 40-second timeout. A new request that collides with an expired `running` job atomically marks the stale row failed and retries the insert once; the daily discovery route remains a background sweep. A failed job remains retryable. Investigate repeated recoveries before increasing time limits.
 
 ## Deployment reproducibility
 

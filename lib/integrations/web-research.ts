@@ -234,9 +234,7 @@ export class TavilyProvider implements WebResearchProvider {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          query: [input.companyName, input.city, input.verifiedDomain]
-            .filter(Boolean)
-            .join(" "),
+          query: buildCompanyResearchQuery(input.companyName, input.city),
           search_depth: "advanced",
           topic: "news",
           max_results: 10,
@@ -286,13 +284,25 @@ function firstText(value: string | string[] | undefined) {
 }
 
 export function buildCompanyWebsiteQuery(companyName: string, city?: string) {
-  const brandName = companyName
+  const brandName = companyBrandName(companyName);
+  return `\"${brandName || companyName}\" ${city ?? "Deutschland"} Website Impressum`;
+}
+
+export function buildCompanyResearchQuery(companyName: string, city?: string) {
+  const brandName = companyBrandName(companyName).replace(
+    /\s+(?:germany|deutschland)$/i,
+    "",
+  );
+  return `\"${brandName || companyName}\" ${city ?? "Deutschland"} Unternehmen News Presse`;
+}
+
+function companyBrandName(companyName: string) {
+  return companyName
     .replace(
       /\s+(?:gmbh|ag|ug|kg|ohg|se|gbr|egbr)(?:\s*\(haftungsbeschr[aä]nkt\))?\s*$/i,
       "",
     )
     .trim();
-  return `\"${brandName || companyName}\" ${city ?? "Deutschland"} Website Impressum`;
 }
 
 function mapTavilyResults(results: z.infer<typeof TavilySchema>["results"]) {

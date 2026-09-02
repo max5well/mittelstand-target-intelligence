@@ -9,6 +9,7 @@ import {
   Map,
   Settings,
   SlidersHorizontal,
+  Tags,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -18,6 +19,7 @@ import { BrandMark } from "@/components/brand-mark";
 const navigation = [
   { label: "Übersicht", href: "/overview", icon: BarChart3 },
   { label: "Unternehmen", href: "/companies", icon: Building2 },
+  { label: "Verkaufsangebote", href: "/sale-listings", icon: Tags },
   { label: "Karte", href: "/map", icon: Map },
   { label: "Analysen", href: "/analytics", icon: Globe2 },
   { label: "Gespeicherte Suchen", href: "/searches", icon: SlidersHorizontal },
@@ -56,9 +58,7 @@ export function AppShell({
           className="space-y-1 px-3 py-6 text-sm"
         >
           {navigation.map(({ label, href, icon: Icon }) => {
-            const active =
-              pathname === href ||
-              (href === "/companies" && pathname.startsWith("/companies/"));
+            const active = pathname === href || pathname.startsWith(`${href}/`);
             return (
               <Link
                 key={href}

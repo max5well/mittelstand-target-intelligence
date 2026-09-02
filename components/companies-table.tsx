@@ -350,7 +350,12 @@ export function CompaniesTable({
         cell: ({ row }) => (
           <div>
             <p>{row.original.city}</p>
-            <p className="mt-1 text-xs text-[#84908b]">{row.original.state}</p>
+            {row.original.state !== "N/A" &&
+            row.original.state !== row.original.city ? (
+              <p className="mt-1 text-xs text-[#84908b]">
+                {row.original.state}
+              </p>
+            ) : null}
           </div>
         ),
       },

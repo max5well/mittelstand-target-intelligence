@@ -22,6 +22,8 @@ type PreviousRun = {
   provider: string;
   completedAt: string | null;
   available: boolean;
+  candidates: number | null;
+  rejected: number | null;
 };
 type WebsiteToast = {
   kind: "success" | "not-found";
@@ -80,14 +82,14 @@ const actions: Array<{
     provider: "firecrawl",
     label: "Unternehmenswebsite analysieren",
     description: "Inhalte der offiziellen Website als Quellenbeleg speichern",
-    credits: "ca. 1–5 Cr.",
+    credits: "ca. 1–5 Cr. + ≤22k KI-Tokens",
   },
   {
     stage: "tavily_research",
     provider: "tavily",
     label: "Web & Nachrichten recherchieren",
     description: "Externe Quellen, Titel, Auszüge und URLs",
-    credits: "2 Cr.",
+    credits: "2 Cr. + ≤22k KI-Tokens",
   },
 ];
 
@@ -98,6 +100,7 @@ export function CompanyActions({
   availableProviders,
   exhaustedProviders,
   hasWebsite,
+  hasOpenRegisterId,
 }: {
   companyId: string;
   workspaceId: string;
@@ -105,6 +108,7 @@ export function CompanyActions({
   availableProviders: string[];
   exhaustedProviders: string[];
   hasWebsite: boolean;
+  hasOpenRegisterId: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<Stage | "all" | null>(null);
@@ -130,7 +134,8 @@ export function CompanyActions({
       !(action.stage === "website_discovery" && hasWebsite) &&
       (action.requiredProviders ?? []).every((provider) =>
         availableProviders.includes(provider),
-      ),
+      ) &&
+      (action.provider !== "openregister" || hasOpenRegisterId),
   );
 
   async function run(stage: Stage) {
@@ -147,6 +152,8 @@ export function CompanyActions({
       skipped?: boolean;
       available?: boolean;
       website?: string | null;
+      candidates?: number;
+      rejected?: number;
     };
     if (!response.ok)
       throw new Error(result.error ?? `${stage} ist fehlgeschlagen`);
@@ -176,9 +183,15 @@ export function CompanyActions({
         );
       }
       if (stage !== "website_discovery") {
+        const emptyResult =
+          result.candidates === 0
+            ? "Der Anbieter hat keine Treffer geliefert."
+            : result.rejected && result.rejected > 0
+              ? `${result.rejected} Treffer wurden wegen fehlender Unternehmensübereinstimmung oder unzureichender Inhalte verworfen.`
+              : "Der Anbieter hat keine passenden Daten geliefert.";
         setMessage(
           result.available === false
-            ? `${action?.label ?? stage} abgeschlossen, aber der Anbieter hat keine passenden Daten geliefert.`
+            ? `${action?.label ?? stage} abgeschlossen. ${emptyResult}`
             : `${action?.label ?? stage} abgeschlossen. Die Ergebnisse wurden unten gespeichert.`,
         );
       }
@@ -378,7 +391,7 @@ export function CompanyActions({
                   <span className="mt-1 flex items-center gap-1 text-xs font-medium text-[#66716d]">
                     <CheckCircle2 size={11} /> Abgeschlossen
                     {previous
-                      ? ` ${formatRunDate(previous.completedAt)} · ${previous.available ? "Daten geliefert" : "nicht verfügbar"}`
+                      ? ` ${formatRunDate(previous.completedAt)} · ${formatRunOutcome(previous)}`
                       : " · Ergebnisse werden geladen"}
                   </span>
                 ) : null}
@@ -390,7 +403,7 @@ export function CompanyActions({
           );
         },
       )}
-      {availableProviders.includes("openregister") ? (
+      {availableProviders.includes("openregister") && hasOpenRegisterId ? (
         <button
           type="button"
           disabled={busy !== null || allOpenRegisterActionsCompleted}
@@ -424,4 +437,12 @@ function formatRunDate(value: string | null) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function formatRunOutcome(run: PreviousRun) {
+  if (run.available) return "Daten geliefert";
+  if (run.candidates === 0) return "keine Treffer vom Anbieter";
+  if (run.candidates && run.rejected === run.candidates)
+    return `${run.candidates} Treffer verworfen`;
+  return "keine passenden Quellen";
 }
