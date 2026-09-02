@@ -5,13 +5,19 @@ import { EmptyDataState } from "@/components/empty-data-state";
 import { requireUser } from "@/lib/auth/user";
 import { listCompanies } from "@/lib/data/companies";
 import { hasLiveDataBackend } from "@/lib/integrations/status";
+import { companies as mockCompanies } from "@/lib/mock-data";
 
 export default async function CompaniesPage() {
   const user = await requireUser();
   const backendConfigured = hasLiveDataBackend();
+  const mockMode =
+    process.env.MOCK_PROVIDERS !== "false" &&
+    process.env.NODE_ENV !== "production";
   const companies = backendConfigured
     ? await listCompanies(user.workspaceId, user.id, { includeArchived: true })
-    : [];
+    : mockMode
+      ? mockCompanies
+      : [];
   return (
     <div className="mx-auto max-w-[1700px] p-5 md:p-9">
       <PageHeader
