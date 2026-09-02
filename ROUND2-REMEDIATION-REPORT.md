@@ -46,20 +46,27 @@ All code-controlled findings from the round-two audit are remediated. The sale-l
 | `npm run lint`                            | PASS — 0 warnings/errors                                                                       |
 | `npm run build`                           | PASS — Next.js 16.3.3 production build, all routes generated                                   |
 | `npm run test:rls`                        | Local attempt blocked because Docker Desktop was not running; CI result below is authoritative |
-| `npx supabase db push --linked --dry-run` | PASS — exactly `20260902203000_provider_usage_units.sql` pending                               |
+| `npx supabase db push --linked --dry-run` | PASS before delivery — exactly `20260902203000_provider_usage_units.sql` was pending           |
+| Production migration                      | PASS — `20260902203000` is recorded remotely and all six columns were queried successfully     |
+| GitHub CI                                 | PASS — lint, typecheck, unit tests, RLS tests, build, Playwright install and E2E               |
+| Production smoke                          | PASS — `/` 200, `/login` 200, `/companies` 307, unauthenticated import 401                     |
 | Paid API calls                            | 0                                                                                              |
 
 ## Delivery evidence
 
-This section is updated after GitHub CI, merge, database migration, and Vercel Git deployment complete.
+Delivery completed on 2026-09-02:
 
-- **Feature/remediation commit:** pending
-- **Pull request:** pending
-- **CI:** pending
-- **Merged commit:** pending
-- **Production migration:** pending
-- **Vercel production deployment:** pending
-- **Post-deploy error scan:** pending
+- **Feature/remediation commit:** [`97c0e94`](https://github.com/max5well/mittelstand-target-intelligence/commit/97c0e94)
+- **Documentation-format commit:** [`3ce42bd`](https://github.com/max5well/mittelstand-target-intelligence/commit/3ce42bd)
+- **Pull request:** [#9 — Harden enrichment and sale-listing imports](https://github.com/max5well/mittelstand-target-intelligence/pull/9), merged
+- **CI:** both [push verification](https://github.com/max5well/mittelstand-target-intelligence/actions/runs/33674363536) and [pull-request verification](https://github.com/max5well/mittelstand-target-intelligence/actions/runs/33674363599) passed; the latter included RLS and browser E2E
+- **Merged commit:** [`13d3eea`](https://github.com/max5well/mittelstand-target-intelligence/commit/13d3eea093ff1e31128af8938b3d12af84e975a8)
+- **Production migration:** `20260902203000_provider_usage_units.sql` was applied alone and recorded as applied; a follow-up schema query confirmed `usage_unit`, `estimated_units`, `actual_units`, `input_units`, `output_units`, and `actual_cost_micros`
+- **Vercel production deployment:** [`dpl_DFh4wZgF4CEWe62PxShSMRArrGrv`](https://zielunternehmen-bxhdhh6rp-maxs-projects-c0536428.vercel.app) is Ready and aliases [zielunternehmen.vercel.app](https://zielunternehmen.vercel.app); its build log identifies branch `main` at commit `13d3eea`
+- **Post-deploy verification:** the public home and login pages returned HTTP 200; the authenticated companies route redirected with 307; an unauthenticated sale-listing import was rejected with 401; sampled runtime logs contained only `info` startup events and no warning/error event
+- **CSP verification:** the production header no longer contains the stale OpenAI origin and retains the intended Supabase/provider allowlist
+
+An unrelated, untracked migration (`20260902193317_copilot_eval_console.sql`) and concurrent working-tree edits appeared after the initial dry run. They were deliberately excluded from this remediation, not modified, and not applied to production.
 
 ## Operational documentation
 
