@@ -27,7 +27,14 @@ const admin = createClient(apiUrl, serviceRoleKey, {
 });
 const workspaceA = "00000000-0000-4000-8000-000000000010";
 const workspaceB = randomUUID();
-await admin.from("workspaces").insert({ id: workspaceB, name: "RLS Test B" });
+const { error: workspaceError } = await admin
+  .from("workspaces")
+  .insert({ id: workspaceB, name: "RLS Test B" });
+assert.equal(
+  workspaceError,
+  null,
+  `Unable to create workspace: ${workspaceError?.message}`,
+);
 
 const users = [
   { email: "wiese@dge.technology", id: randomUUID(), workspace: workspaceA },
@@ -50,17 +57,42 @@ for (const user of users) {
     `Unable to create ${user.email}: ${error?.message}`,
   );
 }
-await admin.from("workspace_memberships").delete().eq("user_id", users[1].id);
-await admin.from("workspace_memberships").insert({
-  workspace_id: workspaceB,
-  user_id: users[1].id,
-  role: "analyst",
-  status: "active",
-});
+// Admin-created users are email-provider fixtures, not Google OAuth signups. Set
+// memberships explicitly so this test exercises RLS independently of the Auth
+// signup hook (the hook has its own database function and app-level tests).
+const { error: membershipDeleteError } = await admin
+  .from("workspace_memberships")
+  .delete()
+  .in(
+    "user_id",
+    users.map((user) => user.id),
+  );
+assert.equal(membershipDeleteError, null);
+const { error: membershipInsertError } = await admin
+  .from("workspace_memberships")
+  .insert([
+    {
+      workspace_id: workspaceA,
+      user_id: users[0].id,
+      role: "analyst",
+      status: "active",
+    },
+    {
+      workspace_id: workspaceB,
+      user_id: users[1].id,
+      role: "analyst",
+      status: "active",
+    },
+  ]);
+assert.equal(
+  membershipInsertError,
+  null,
+  `Unable to create memberships: ${membershipInsertError?.message}`,
+);
 
 const companyA = randomUUID();
 const companyB = randomUUID();
-await admin.from("companies").insert([
+const { error: companyInsertError } = await admin.from("companies").insert([
   {
     id: companyA,
     workspace_id: workspaceA,
@@ -74,6 +106,11 @@ await admin.from("companies").insert([
     legal_name: "Workspace B GmbH",
   },
 ]);
+assert.equal(
+  companyInsertError,
+  null,
+  `Unable to create companies: ${companyInsertError?.message}`,
+);
 
 const concurrentJobs = await Promise.all([
   admin.from("enrichment_jobs").insert({
