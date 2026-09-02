@@ -49,8 +49,8 @@ Legend: **Confirmed** (fix present and does what the report says), **Confirmed w
 ### Verification commands (this round, clean container, working-tree snapshot)
 
 | Command                          | Result                                                                                                                                                                                            |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| `npx vitest run`                 | **PASS**: 25 files, 90 tests (report stated 23 / 79 at commit time; the difference is the new con                                                                                                 | cess and OpenRouter tests) |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npx vitest run`                 | **PASS**: 25 files, 90 tests (report stated 23 / 79 at commit time; the difference is the new con\|cess and OpenRouter tests)                                                                     |
 | `npm run typecheck`              | **PASS**                                                                                                                                                                                          |
 | `npm run lint`                   | **PASS**                                                                                                                                                                                          |
 | `npm run build`                  | **Not reproducible here**: fails at `next/font` because the container cannot reach Google Fonts. Not a code defect; CI on `fbeebb2` is the authoritative build signal per the remediation report. |

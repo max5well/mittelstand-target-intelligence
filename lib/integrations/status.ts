@@ -22,9 +22,9 @@ export function getIntegrationStatuses(
 ): IntegrationStatus[] {
   const destinationConfigured = Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      (process.env.SUPABASE_SECRET_KEY ||
-        (process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY &&
-          process.env.SUPABASE_SERVER_ACCESS_TOKEN)),
+    (process.env.SUPABASE_SECRET_KEY ||
+      (process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY &&
+        process.env.SUPABASE_SERVER_ACCESS_TOKEN)),
   );
   const liveMode = process.env.MOCK_PROVIDERS === "false";
   const definitions = [
@@ -85,8 +85,8 @@ export function getIntegrationStatuses(
 export function hasLiveDataBackend() {
   return Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      (process.env.SUPABASE_SECRET_KEY ||
-        (process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY &&
-          process.env.SUPABASE_SERVER_ACCESS_TOKEN)),
+    (process.env.SUPABASE_SECRET_KEY ||
+      (process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY &&
+        process.env.SUPABASE_SERVER_ACCESS_TOKEN)),
   );
 }
