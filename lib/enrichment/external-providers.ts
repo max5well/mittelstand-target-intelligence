@@ -922,11 +922,7 @@ type OfficialWebsiteCandidate = {
 };
 
 export type WebsiteEvidenceSignal =
-  | "company_name"
-  | "city"
-  | "street_address"
-  | "postcode"
-  | "representative";
+  "company_name" | "city" | "street_address" | "postcode" | "representative";
 
 export type WebsiteVerificationProfile = {
   companyName: string;

@@ -84,10 +84,7 @@ export type Company = {
   ownership: OwnershipCategory;
   ownershipConfidence: number;
   ownershipMethod:
-    | "openregister_flag"
-    | "rules"
-    | "ai_with_evidence"
-    | "manual";
+    "openregister_flag" | "rules" | "ai_with_evidence" | "manual";
   ownerSummary: string;
   owners: Array<{ name: string; type: string; percentage: number | null }>;
   ownershipRetrievedAt: string | null;
@@ -113,12 +110,7 @@ export type Job = {
   provider: string;
   type: string;
   status:
-    | "queued"
-    | "running"
-    | "succeeded"
-    | "failed"
-    | "retry_wait"
-    | "cancelled";
+    "queued" | "running" | "succeeded" | "failed" | "retry_wait" | "cancelled";
   credits: number;
   duration: string;
   updatedAt: string;
