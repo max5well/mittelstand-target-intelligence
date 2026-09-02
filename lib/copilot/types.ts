@@ -15,6 +15,14 @@ export const CopilotTaskTypeSchema = z.enum([
   "general",
 ]);
 
+export const BenchmarkMetricSchema = z.enum([
+  "gross_margin",
+  "ebitda_margin",
+  "ebit_margin",
+  "operating_margin",
+  "net_margin",
+]);
+
 export const ResearchPlanSchema = z.object({
   taskTypes: z.array(CopilotTaskTypeSchema).min(1).max(3),
   classificationConfidence: z.number().min(0).max(1),
@@ -28,7 +36,7 @@ export const ResearchPlanSchema = z.object({
       z.object({
         query: z.string().min(2).max(400),
         purpose: z.string().min(1).max(300),
-        tool: z.enum(["exa", "tavily", "both"]),
+        tool: z.literal("web"),
       }),
     )
     .min(1)
@@ -55,6 +63,25 @@ export const CopilotAnswerSchema = z.object({
       }),
     )
     .max(30),
+  benchmark: z
+    .object({
+      metric: BenchmarkMetricSchema,
+      observations: z
+        .array(
+          z.object({
+            companyName: z.string().min(1).max(200),
+            metric: BenchmarkMetricSchema,
+            valuePercent: z.number().min(-100).max(100),
+            period: z.string().min(1).max(80),
+            scope: z.string().min(1).max(240),
+            sourceUrl: z.string().url(),
+            sourceKind: z.enum(["primary", "secondary"]),
+            comparabilityNote: z.string().max(300).nullable(),
+          }),
+        )
+        .max(5),
+    })
+    .nullable(),
   contradictions: z.array(z.string().max(700)).max(10),
   limitations: z.array(z.string().max(700)).max(10),
   followUps: z.array(z.string().max(300)).max(5),

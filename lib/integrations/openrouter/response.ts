@@ -37,6 +37,12 @@ export type OpenRouterUsage = Record<string, unknown> & {
   cost?: number | null;
 };
 
+export type OpenRouterCitation = {
+  url: string;
+  title: string | null;
+  content: string;
+};
+
 export function normalizeOpenRouterResponse(
   response: OpenRouterResponse,
   requestedModel: string,
@@ -71,9 +77,33 @@ export function normalizeOpenRouterResponse(
   return {
     model,
     content,
+    citations: normalizeCitations(choice.message.annotations),
     usage,
     cost: usage.cost ?? null,
   };
+}
+
+function normalizeCitations(value: unknown): OpenRouterCitation[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  return value.flatMap((annotation) => {
+    const outer = asRecord(annotation);
+    const citation = asRecord(outer?.url_citation);
+    const url = typeof citation?.url === "string" ? citation.url.trim() : "";
+    if (!isHttpUrl(url) || seen.has(url)) return [];
+    seen.add(url);
+    return [
+      {
+        url,
+        title:
+          typeof citation?.title === "string" && citation.title.trim()
+            ? citation.title.trim()
+            : null,
+        content:
+          typeof citation?.content === "string" ? citation.content.trim() : "",
+      },
+    ];
+  });
 }
 
 function normalizeUsage(value: unknown): OpenRouterUsage {
@@ -180,4 +210,13 @@ function finiteNumber(value: unknown) {
         ? Number(value)
         : Number.NaN;
   return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+function isHttpUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
 }

@@ -14,7 +14,7 @@ The application is a decision-support product, not a CRM and not an automated ou
 - Company detail experience with reported financial history, ownership versus classification, management, evidence-linked derived claims, activity, and cost-aware enrichment actions.
 - Germany map experience with cached fixture coordinates, visible geocode failures, filter modes, clusters/markers, and target previews. A commercial MapLibre tile/geocoder adapter can replace the fixture visualization.
 - Coverage-aware analytics, provider jobs/usage, retries, and missing-run health indicators.
-- Typed adapters for OpenRegister, Apollo, Firecrawl, Tavily, Exa, OpenRouter structured output, and commercial geocoding. Zod validates all external boundaries.
+- Typed adapters for OpenRegister, Apollo, Firecrawl, Tavily, OpenRouter structured output and model-controlled web search, and commercial geocoding. Zod validates all external boundaries.
 - Company Copilot for context-aware extended research with Auto, Quick and Deep modes, persistent source traces, cost-aware model routing and refresh-safe progress.
 - Owner-only Eval Console with deterministic checks, LLM-as-a-Judge, human review and datasets built from real Copilot usage.
 - A separate sale-opportunities workspace can import public German con|cess listings on demand after source authorization, with stable listing-ID deduplication, concise titles, source links, asking prices, and selling-agent attribution. Austrian listings are excluded.
@@ -68,8 +68,7 @@ npx supabase db reset
 | `APOLLO_API_KEY`                       |       Optional | Organization and people actions hidden/disabled in live mode            |
 | `FIRECRAWL_API_KEY`                    |       Optional | First-party website analysis hidden/disabled in live mode               |
 | `TAVILY_API_KEY`                       |       Optional | External news research hidden/disabled in live mode                     |
-| `EXA_API_KEY`                          |       Optional | Semantic Copilot search is unavailable                                  |
-| `OPENROUTER_API_KEY`                   |       Optional | Structured evidence review is skipped; accepted raw sources remain      |
+| `OPENROUTER_API_KEY`                   |       Optional | Structured review and Copilot web research are unavailable              |
 | `OPENROUTER_MODEL`                     |       Optional | Defaults to `z-ai/glm-5.3-flash`                                        |
 | `COPILOT_*_MODEL`                      |       Optional | Defaults route GLM Flash → Gemini Flash → GPT Mini by research depth    |
 | `EVAL_JUDGE_MODEL`                     |       Optional | Defaults to `openai/gpt-5.4-mini`                                       |
@@ -133,7 +132,7 @@ No public signup route exists. Viewers do not receive decrypted Apollo personal 
 - Paid jobs use unique idempotency keys; a duplicate click cannot create a second queued row for the same freshness bucket.
 - con|cess records are anonymous sale opportunities rather than verified legal entities. They are kept out of company, overview, map, analytics, and company CSV views; listing values remain attributed to con|cess and refresh only through the explicit sale-listing sync action. The action is disabled unless `CONCESS_IMPORT_ENABLED=true`, pages are fetched serially, and a published robots policy is enforced. That flag records an owner decision after written source permission; a missing robots file is not permission.
 - OpenRouter reviews are capped at 4,000 output tokens, use a 40-second request timeout, obey `OPENROUTER_DAILY_TOKEN_LIMIT`, and write token plus micro-dollar usage to `provider_usage_events` without mixing tokens into provider-credit totals.
-- Copilot treats provider pages as untrusted input, validates structured model output, rejects unsafe/duplicate/thin sources, accepts citations only from the supplied URL allowlist, and persists every question, task class, query, source decision, prompt version, model route, cost, latency and feedback event for evaluation.
+- Copilot derives its response profile from the primary question type, uses bounded model-controlled web search without Exa fan-out, and requires like-for-like observations for financial benchmarks. It treats provider pages as untrusted input, validates structured model output, rejects unsafe/duplicate/thin sources, shows only cited sources, and persists every question, task class, query, source decision, prompt version, model route, cost, latency and feedback event for evaluation.
 
 ## Deployment
 

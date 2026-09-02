@@ -115,10 +115,10 @@ export async function saveCopilotQuery(input: {
   tool: string;
   purpose: string;
   query: string;
-  resultCount: number;
+  resultCount: number | null;
   acceptedCount: number | null;
   rejectedCount: number | null;
-  durationMs: number;
+  durationMs: number | null;
 }) {
   const { error } = await createAdminClient()
     .from("copilot_search_queries")
@@ -208,7 +208,7 @@ export async function saveCopilotClaims(
   answer: CopilotAnswer,
   sourceIds: Map<string, string>,
 ) {
-  const rows = answer.claims.flatMap((claim) =>
+  const narrativeRows = answer.claims.flatMap((claim) =>
     claim.sourceUrls.map((url) => ({
       workspace_id: workspaceId,
       research_run_id: runId,
@@ -219,6 +219,18 @@ export async function saveCopilotClaims(
       confidence: claim.confidence,
     })),
   );
+  const benchmarkRows = (answer.benchmark?.observations ?? []).map(
+    (observation) => ({
+      workspace_id: workspaceId,
+      research_run_id: runId,
+      source_id: sourceIds.get(observation.sourceUrl) ?? null,
+      claim_type: `benchmark_${observation.metric}`,
+      claim_text: `${observation.companyName}: ${observation.valuePercent}% (${observation.period}, ${observation.scope})`,
+      support_status: "supported",
+      confidence: null,
+    }),
+  );
+  const rows = [...narrativeRows, ...benchmarkRows];
   if (!rows.length) return;
   const { error } = await createAdminClient()
     .from("copilot_research_claims")

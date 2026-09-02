@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   enforcePlanBudget,
+  markCitedSources,
   normalizeSources,
   validateAnswerCitations,
 } from "@/lib/copilot/run";
@@ -18,7 +19,7 @@ const plan: ResearchPlan = {
   queries: Array.from({ length: 8 }, (_, index) => ({
     query: `peer query ${index}`,
     purpose: "Find peer data",
-    tool: "both" as const,
+    tool: "web" as const,
   })),
 };
 
@@ -38,7 +39,12 @@ function source(overrides: Partial<WebSource> = {}): WebSource {
 
 describe("Copilot guardrails", () => {
   it("enforces an explicitly requested quick-mode query budget", () => {
-    const result = enforcePlanBudget(plan, "quick", "Muster GmbH");
+    const result = enforcePlanBudget(
+      plan,
+      "quick",
+      "Muster GmbH",
+      "Wie hoch ist die Bruttomarge vergleichbarer Unternehmen?",
+    );
     expect(result.resolvedMode).toBe("quick");
     expect(result.queries).toHaveLength(2);
     expect(result.answerLength).toBe("concise");
@@ -81,6 +87,7 @@ describe("Copilot guardrails", () => {
             confidence: 0.9,
           },
         ],
+        benchmark: null,
         contradictions: [],
         limitations: [],
         followUps: [],
@@ -93,6 +100,39 @@ describe("Copilot guardrails", () => {
         sourceUrls: ["https://example.com/report"],
         confidence: 0.8,
       },
+    ]);
+  });
+
+  it("marks only cited research sources for the primary source list", () => {
+    const cited = source();
+    const unused = source({ url: "https://example.org/unused" });
+    const normalized = normalizeSources([cited, unused], 6);
+    const result = markCitedSources(normalized.all, {
+      headline: "Benchmark",
+      directAnswer: "Answer",
+      sections: [],
+      claims: [
+        {
+          text: "Supported",
+          sourceUrls: [cited.url],
+          confidence: 0.9,
+        },
+      ],
+      benchmark: null,
+      contradictions: [],
+      limitations: [],
+      followUps: [],
+    });
+
+    expect(
+      result.map(({ url, accepted, rejectionReason }) => ({
+        url,
+        accepted,
+        rejectionReason,
+      })),
+    ).toEqual([
+      { url: cited.url, accepted: true, rejectionReason: undefined },
+      { url: unused.url, accepted: false, rejectionReason: "not_cited" },
     ]);
   });
 });

@@ -369,6 +369,12 @@ function RunCard({
               <p className="mt-2 whitespace-pre-line text-sm leading-7 text-[#40504a]">
                 {answer.directAnswer ?? run.answer}
               </p>
+              {answer.benchmark ? (
+                <BenchmarkTable
+                  benchmark={answer.benchmark}
+                  sources={run.sources}
+                />
+              ) : null}
               {answer.sections?.map((section) => (
                 <div key={section.title} className="mt-5">
                   <h4 className="text-sm font-semibold">{section.title}</h4>
@@ -425,7 +431,7 @@ function RunCard({
               {run.sources.length ? (
                 <div className="mt-5 border-t border-[#e5e8e6] pt-4">
                   <p className="text-xs font-semibold uppercase tracking-[.08em] text-[#70807a]">
-                    Verwendete Quellen
+                    Zitierte Quellen
                   </p>
                   <div className="mt-2 grid gap-2 md:grid-cols-2">
                     {run.sources.map((source) => (
@@ -441,7 +447,7 @@ function RunCard({
                             {source.title || new URL(source.url).hostname}
                           </span>
                           <span className="mt-0.5 block text-[11px] uppercase tracking-[.06em] text-[#87918d]">
-                            {source.provider}
+                            {sourceProviderLabel(source.provider)}
                           </span>
                         </span>
                         <ArrowUpRight
@@ -472,6 +478,121 @@ function RunCard({
       ) : null}
     </article>
   );
+}
+
+function BenchmarkTable({
+  benchmark,
+  sources,
+}: {
+  benchmark: NonNullable<CopilotRunView["answerPayload"]["benchmark"]>;
+  sources: CopilotRunView["sources"];
+}) {
+  const label = benchmarkMetricLabel(benchmark.metric);
+  return (
+    <div className="mt-5 overflow-hidden rounded-xl border border-[#dce4e1]">
+      <div className="flex items-center justify-between gap-3 bg-[#f2f8f5] px-4 py-3">
+        <p className="text-sm font-semibold text-[#294a40]">
+          Vergleichsgruppe · {label}
+        </p>
+        <span
+          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${benchmark.observations.length >= 3 ? "bg-[#dcefe8] text-[#0e654f]" : "bg-[#fff0d5] text-[#846216]"}`}
+        >
+          {benchmark.observations.length >= 3
+            ? `${benchmark.observations.length} Unternehmen`
+            : "Datenbasis zu klein"}
+        </span>
+      </div>
+      {benchmark.observations.length ? (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="border-y border-[#e3e8e5] bg-white text-xs uppercase tracking-[.05em] text-[#74817c]">
+              <tr>
+                <th scope="col" className="px-4 py-2.5 font-semibold">
+                  Unternehmen
+                </th>
+                <th scope="col" className="px-4 py-2.5 font-semibold">
+                  Zeitraum
+                </th>
+                <th
+                  scope="col"
+                  className="px-4 py-2.5 text-right font-semibold"
+                >
+                  {label}
+                </th>
+                <th scope="col" className="px-4 py-2.5 font-semibold">
+                  Quelle
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#e8ecea] bg-white">
+              {benchmark.observations.map((observation) => {
+                const source = sources.find(
+                  (candidate) => candidate.url === observation.sourceUrl,
+                );
+                return (
+                  <tr key={`${observation.companyName}-${observation.period}`}>
+                    <td className="px-4 py-3 align-top">
+                      <span className="font-medium text-[#30423b]">
+                        {observation.companyName}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-[#78847f]">
+                        {observation.scope}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 align-top text-[#55635e]">
+                      {observation.period}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right align-top font-semibold text-[#263b34]">
+                      {observation.valuePercent.toLocaleString("de-DE", {
+                        maximumFractionDigits: 1,
+                      })}{" "}
+                      %
+                    </td>
+                    <td className="px-4 py-3 align-top">
+                      <a
+                        href={observation.sourceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={source?.title ?? observation.sourceUrl}
+                        className="inline-flex items-center gap-1 font-semibold text-[#087b62] underline underline-offset-2"
+                      >
+                        {observation.sourceKind === "primary"
+                          ? "Primärquelle"
+                          : "Sekundärquelle"}
+                        <ArrowUpRight size={12} />
+                      </a>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="bg-white px-4 py-4 text-sm text-[#68756f]">
+          Keine ausreichend vergleichbaren Werte gefunden.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function benchmarkMetricLabel(
+  metric: NonNullable<CopilotRunView["answerPayload"]["benchmark"]>["metric"],
+) {
+  return {
+    gross_margin: "Bruttomarge",
+    ebitda_margin: "EBITDA-Marge",
+    ebit_margin: "EBIT-Marge",
+    operating_margin: "Operative Marge",
+    net_margin: "Nettomarge",
+  }[metric];
+}
+
+function sourceProviderLabel(provider: string) {
+  if (provider === "openrouter") return "Web-Recherche";
+  if (provider === "stored") return "Dossier";
+  return provider;
 }
 
 function Feedback({

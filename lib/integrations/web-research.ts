@@ -4,7 +4,7 @@ import { fetchProvider, type ProviderRequestMetrics } from "./http";
 import { SafePublicHttpUrlSchema } from "@/lib/url-safety";
 
 export type WebSource = {
-  provider: "firecrawl" | "tavily" | "exa";
+  provider: "firecrawl" | "tavily" | "exa" | "openrouter" | "stored";
   url: string;
   title: string | null;
   content: string;
@@ -20,104 +20,6 @@ export interface WebResearchProvider {
     verifiedDomain?: string;
     city?: string;
   }): Promise<WebSource[]>;
-}
-
-const ExaSearchSchema = z
-  .object({
-    requestId: z.string().optional(),
-    results: z.array(
-      z
-        .object({
-          url: z.string().url(),
-          title: z.string().nullable().optional(),
-          publishedDate: z.string().nullable().optional(),
-          text: z.string().nullable().optional(),
-          highlights: z.array(z.string()).optional(),
-          score: z.number().nullable().optional(),
-        })
-        .passthrough(),
-    ),
-    costDollars: z
-      .object({ total: z.number().nonnegative().optional() })
-      .passthrough()
-      .optional(),
-  })
-  .passthrough();
-
-export class ExaProvider {
-  readonly name = "exa";
-  lastRequestCount = 0;
-  lastCostDollars: number | null = null;
-
-  isAvailable() {
-    return (
-      Boolean(process.env.EXA_API_KEY) || process.env.MOCK_PROVIDERS !== "false"
-    );
-  }
-
-  async search(
-    query: string,
-    options: { maxResults?: number; includeDomains?: string[] } = {},
-  ): Promise<WebSource[]> {
-    if (process.env.MOCK_PROVIDERS !== "false") {
-      return [
-        {
-          provider: "exa",
-          url: "https://example.com/fictional-semantic-result",
-          title: `Semantischer Treffer: ${query}`,
-          content:
-            "Fixture evidence for a German company research question. This result is intentionally fictional.",
-          publishedAt: null,
-          score: 0.9,
-          retrievedAt: new Date().toISOString(),
-        },
-      ];
-    }
-    if (!process.env.EXA_API_KEY) return [];
-
-    const metrics: ProviderRequestMetrics = { requestCount: 0 };
-    const payload = await fetchProvider(
-      "https://api.exa.ai/search",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": process.env.EXA_API_KEY,
-        },
-        body: JSON.stringify({
-          query,
-          type: "auto",
-          numResults: Math.min(Math.max(options.maxResults ?? 5, 1), 10),
-          includeDomains: options.includeDomains?.length
-            ? options.includeDomains
-            : undefined,
-          contents: {
-            text: { maxCharacters: 12_000 },
-            highlights: { maxCharacters: 1_500 },
-            livecrawl: "preferred",
-          },
-        }),
-      },
-      ExaSearchSchema,
-      2,
-      metrics,
-    );
-    this.lastRequestCount = metrics.requestCount;
-    this.lastCostDollars = payload.costDollars?.total ?? null;
-    const retrievedAt = new Date().toISOString();
-    return payload.results.map((result) => ({
-      provider: "exa" as const,
-      url: result.url,
-      title: result.title ?? null,
-      content:
-        result.text?.trim() ||
-        result.highlights?.filter(Boolean).join("\n") ||
-        "",
-      publishedAt: result.publishedDate ?? null,
-      score: result.score ?? null,
-      retrievedAt,
-    }));
-  }
 }
 
 const FirecrawlSchema = z

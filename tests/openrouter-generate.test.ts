@@ -111,6 +111,76 @@ describe("OpenRouter structured generation", () => {
     expect(result.output).toEqual({ answer: "ok" });
   });
 
+  it("uses bounded model-controlled web search and returns cited sources", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "test-key");
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({
+        model: "google/gemini-3-flash-preview",
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({ answer: "36.5%" }),
+              annotations: [
+                {
+                  type: "url_citation",
+                  url_citation: {
+                    url: "https://example.com/annual-report",
+                    title: "Annual report",
+                    content: "Reported gross margin was 36.5 percent.",
+                  },
+                },
+              ],
+            },
+          },
+        ],
+        usage: {
+          server_tool_use: { web_search_requests: 1 },
+          cost: 0.00002,
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await generateStructured({
+      model: "google/gemini-3-flash-preview",
+      system: "Research the answer.",
+      payload: { question: "Gross margin?" },
+      schema: z.object({ answer: z.string() }),
+      schemaName: "web_answer",
+      webSearch: {
+        engine: "parallel",
+        maxUses: 2,
+        maxResults: 3,
+        maxTotalResults: 6,
+        maxCharacters: 2_000,
+      },
+    });
+
+    const [, request] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      tools: [
+        {
+          type: "openrouter:web_search",
+          parameters: {
+            engine: "parallel",
+            max_uses: 2,
+            max_results: 3,
+            max_total_results: 6,
+            max_characters: 2_000,
+          },
+        },
+      ],
+      max_tool_calls: 2,
+    });
+    expect(result.citations).toEqual([
+      {
+        url: "https://example.com/annual-report",
+        title: "Annual report",
+        content: "Reported gross margin was 36.5 percent.",
+      },
+    ]);
+  });
+
   it.each([
     {
       model: "z-ai/glm-5.3-flash",

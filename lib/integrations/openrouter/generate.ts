@@ -7,6 +7,7 @@ import {
 } from "@/lib/integrations/http";
 import {
   normalizeOpenRouterResponse,
+  type OpenRouterCitation,
   OpenRouterResponseSchema,
   parseStructuredContent,
 } from "@/lib/integrations/openrouter/response";
@@ -19,6 +20,15 @@ export type StructuredGeneration<T> = {
   requestCount: number;
   durationMs: number;
   estimatedCostMicros: number | null;
+  citations: OpenRouterCitation[];
+};
+
+export type WebSearchOptions = {
+  engine: "native" | "parallel" | "perplexity";
+  maxUses: number;
+  maxResults: number;
+  maxTotalResults: number;
+  maxCharacters: number;
 };
 
 export async function generateStructured<T>(input: {
@@ -29,6 +39,7 @@ export async function generateStructured<T>(input: {
   schemaName: string;
   maxTokens?: number;
   fallbackModel?: string;
+  webSearch?: WebSearchOptions;
 }): Promise<StructuredGeneration<T>> {
   if (!process.env.OPENROUTER_API_KEY)
     throw new Error("OPENROUTER_API_KEY is not configured");
@@ -60,6 +71,23 @@ export async function generateStructured<T>(input: {
         stream: false,
         provider: { require_parameters: true },
         plugins: [{ id: "response-healing" }],
+        ...(input.webSearch
+          ? {
+              tools: [
+                {
+                  type: "openrouter:web_search",
+                  parameters: {
+                    engine: input.webSearch.engine,
+                    max_uses: input.webSearch.maxUses,
+                    max_results: input.webSearch.maxResults,
+                    max_total_results: input.webSearch.maxTotalResults,
+                    max_characters: input.webSearch.maxCharacters,
+                  },
+                },
+              ],
+              max_tool_calls: input.webSearch.maxUses,
+            }
+          : {}),
         store: false,
       };
       const response = await fetchProvider(
@@ -94,6 +122,7 @@ export async function generateStructured<T>(input: {
           normalized.cost === null
             ? null
             : Math.round(normalized.cost * 1_000_000),
+        citations: normalized.citations,
       };
     } catch (error) {
       lastError = error;
