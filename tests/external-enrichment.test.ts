@@ -1,11 +1,20 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  buildWebsiteVerificationProfile,
   isRelevantTavilySource,
   selectOfficialWebsiteCandidate,
   selectOfficialWebsiteCandidates,
   verifyOfficialWebsiteEvidence,
 } from "@/lib/enrichment/external-providers";
-import { buildCompanyWebsiteQuery } from "@/lib/integrations/web-research";
+import {
+  buildCompanyWebsiteQuery,
+  FirecrawlProvider,
+} from "@/lib/integrations/web-research";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
 
 describe("Tavily company evidence relevance", () => {
   const source = (title: string, content = "") => ({
@@ -127,5 +136,72 @@ describe("Tavily company evidence relevance", () => {
     expect(
       buildCompanyWebsiteQuery("Anästhesie MVZ Würzburg GmbH", "Würzburg"),
     ).toBe('"Anästhesie MVZ Würzburg" Würzburg Website Impressum');
+  });
+
+  it("uses the search-result address when paid detail hydration is unavailable", () => {
+    expect(
+      buildWebsiteVerificationProfile({
+        companyName: "Wärmetechnik Leickel GmbH",
+        rawProviderPayload: {
+          address: {
+            street: "Beispielstraße 12",
+            postal_code: "44623",
+            city: "Herne",
+          },
+        },
+      }),
+    ).toMatchObject({
+      city: "Herne",
+      addressLine: "Beispielstraße 12",
+      postcode: "44623",
+    });
+  });
+});
+
+describe("Firecrawl website discovery", () => {
+  it("searches Germany and maps scraped web results into evidence sources", async () => {
+    vi.stubEnv("MOCK_PROVIDERS", "false");
+    vi.stubEnv("FIRECRAWL_API_KEY", "test-key");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            web: [
+              {
+                url: "https://waermetechnik.example/impressum",
+                title: "Impressum",
+                description: "Wärmetechnik Leickel",
+                markdown:
+                  "Wärmetechnik Leickel GmbH, Beispielstraße 12, 44623 Herne",
+              },
+            ],
+          },
+          creditsUsed: 2,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const sources = await new FirecrawlProvider().discoverOfficialWebsite({
+      companyName: "Wärmetechnik Leickel GmbH",
+      city: "Herne",
+    });
+
+    expect(sources).toEqual([
+      expect.objectContaining({
+        provider: "firecrawl",
+        url: "https://waermetechnik.example/impressum",
+        title: "Impressum",
+      }),
+    ]);
+    const [, request] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      query: '"Wärmetechnik Leickel" Herne Website Impressum',
+      country: "DE",
+      sources: ["web"],
+      scrapeOptions: { formats: ["markdown"] },
+    });
   });
 });

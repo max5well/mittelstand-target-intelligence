@@ -17,26 +17,32 @@ export const metadata: Metadata = {
   metadataBase: new URL(
     process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
   ),
-  title: "Unternehmen — Target Intelligence",
-  description: "Private Zielmarkt-Intelligence für den deutschen Mittelstand.",
+  title: "Zielunternehmen — Target Intelligence",
+  description:
+    "Private Target Intelligence für deutsche Unternehmen und den Mittelstand.",
+  icons: {
+    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
+  },
   robots: { index: false, follow: false },
   openGraph: {
-    title: "Unternehmen",
-    description: "Zielmarkt-Intelligence für den deutschen Mittelstand.",
+    title: "Zielunternehmen",
+    description:
+      "Target Intelligence für deutsche Unternehmen und den Mittelstand.",
     type: "website",
     images: [
       {
         url: "/og.png",
         width: 1200,
         height: 630,
-        alt: "Unternehmen — Zielmarkt-Intelligence für den deutschen Mittelstand",
+        alt: "Zielunternehmen — Target Intelligence für den deutschen Mittelstand",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Unternehmen",
-    description: "Zielmarkt-Intelligence für den deutschen Mittelstand.",
+    title: "Zielunternehmen",
+    description:
+      "Target Intelligence für deutsche Unternehmen und den Mittelstand.",
     images: ["/og.png"],
   },
 };

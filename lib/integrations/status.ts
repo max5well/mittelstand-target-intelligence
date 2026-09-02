@@ -40,7 +40,7 @@ export function getIntegrationStatuses(): IntegrationStatus[] {
       name: "Firecrawl",
       env: "FIRECRAWL_API_KEY",
       purpose: "Abruf der offiziellen Unternehmenswebsite",
-      capabilities: ["Website-Crawl", "Seitenextraktion"],
+      capabilities: ["Websuche", "Website-Crawl", "Seitenextraktion"],
       dashboardUrl: "https://www.firecrawl.dev/app",
     },
     {

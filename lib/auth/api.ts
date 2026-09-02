@@ -2,6 +2,7 @@ import "server-only";
 
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { isAllowedGoogleUser } from "@/lib/auth/access";
 import { getOwnerPreviewIdentity } from "@/lib/auth/preview";
 
 type ApiAuthorization =
@@ -63,6 +64,8 @@ export async function authorizeWorkspaceRequest(
   } = await supabase.auth.getUser();
   if (!user)
     return { ok: false, status: 401, error: "Authentication required" };
+  if (!isAllowedGoogleUser(user))
+    return { ok: false, status: 403, error: "Account access denied" };
   const { data: membership } = await supabase
     .from("workspace_memberships")
     .select("workspace_id,role")

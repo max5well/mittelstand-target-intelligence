@@ -71,10 +71,9 @@ const actions: Array<{
     provider: "tavily",
     label: "Website finden & verifizieren",
     description:
-      "Tavily-Kandidat wird mit ID oder mehreren OpenRegister-Profildaten abgeglichen",
+      "Tavily zuerst, Firecrawl als Fallback; Abgleich mit mehreren Profildaten",
     icon: Globe2,
-    credits: "bis zu 12 Cr.",
-    requiredProviders: ["tavily", "openregister"],
+    credits: "ca. 2–12 Cr.",
   },
   {
     stage: "apollo_organization",
@@ -128,7 +127,11 @@ export function CompanyActions({
   );
   const visibleActions = actions.filter(
     (action) =>
-      availableProviders.includes(action.provider) &&
+      (action.stage === "website_discovery"
+        ? availableProviders.includes("tavily") ||
+          availableProviders.includes("firecrawl")
+        : availableProviders.includes(action.provider)) &&
+      !(action.stage === "website_discovery" && hasWebsite) &&
       (action.requiredProviders ?? []).every((provider) =>
         availableProviders.includes(provider),
       ),
@@ -263,8 +266,8 @@ export function CompanyActions({
                 size={16}
                 className={
                   busy === stage
-                    ? "mt-0.5 animate-spin text-[#16856b]"
-                    : "mt-0.5 text-[#16856b]"
+                    ? "mt-0.5 animate-spin text-[#13745f]"
+                    : "mt-0.5 text-[#13745f]"
                 }
               />
               <span className="min-w-0 flex-1">
@@ -300,7 +303,7 @@ export function CompanyActions({
           type="button"
           disabled={busy !== null}
           onClick={runAll}
-          className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#13201d] px-4 text-sm font-semibold text-white disabled:opacity-55"
+          className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#15352e] px-4 text-sm font-semibold text-white disabled:opacity-55"
         >
           <RefreshCw
             size={14}

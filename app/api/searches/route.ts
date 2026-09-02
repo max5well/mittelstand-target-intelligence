@@ -35,12 +35,12 @@ export async function POST(request: Request) {
     const supabase = createAdminClient();
     const hydrationStages =
       input.hydrationMode === "full"
-        ? ["details", "financials", "owners"]
+        ? ["details", "financials", "owners", "website_discovery"]
         : input.hydrationMode === "lean"
-          ? ["details"]
+          ? ["details", "website_discovery"]
           : [];
     const monthlyCreditEstimate =
-      (10 + input.dailyTarget * (input.hydrationMode === "full" ? 30 : 10)) *
+      (10 + input.dailyTarget * (input.hydrationMode === "full" ? 34 : 14)) *
       30;
     const { data: search, error } = await supabase
       .from("saved_searches")

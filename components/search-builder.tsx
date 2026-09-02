@@ -22,7 +22,13 @@ import {
 import { germanStates, registerCourtsForStates } from "@/lib/german-states";
 import { wz2025Industries } from "@/lib/wz2025";
 
-const providerCosts = { search: 10, details: 10, financials: 10, owners: 10 };
+const providerCosts = {
+  search: 10,
+  details: 10,
+  financials: 10,
+  owners: 10,
+  websiteDiscovery: 4,
+};
 
 type SearchApiResponse = {
   error?: string;
@@ -33,6 +39,10 @@ type SearchApiResponse = {
     enrichmentCalls: number;
     unavailable: number;
     enrichmentErrors: number;
+    websiteDiscoveryCalls: number;
+    websitesAdded: number;
+    websitesUnavailable: number;
+    websiteDiscoveryErrors: number;
     creditsUsed: number;
   } | null;
 };
@@ -97,6 +107,7 @@ export function SearchBuilder({
       providerCosts.search +
       dailyTarget *
         (providerCosts.details +
+          providerCosts.websiteDiscovery +
           (mode === "full"
             ? providerCosts.financials + providerCosts.owners
             : 0)),
@@ -269,7 +280,7 @@ export function SearchBuilder({
         );
       setMessage(
         result.run
-          ? `Lauf abgeschlossen: ${result.run.accepted} neu, ${result.run.duplicates} bereits vorhanden; ${result.run.enrichmentCalls} Anreicherungsaufrufe erfasst (${result.run.creditsUsed} Credits).`
+          ? `Lauf abgeschlossen: ${result.run.accepted} neu, ${result.run.duplicates} bereits vorhanden; ${result.run.websitesAdded} Websites automatisch ergänzt; ${result.run.enrichmentCalls + result.run.websiteDiscoveryCalls} Anreicherungsaufrufe erfasst (${result.run.creditsUsed} Credits).`
           : activateSchedule
             ? "Täglicher Zeitplan aktiviert."
             : "Suche als Entwurf gespeichert.",
@@ -294,7 +305,7 @@ export function SearchBuilder({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#13201d] px-4 text-sm font-medium text-white"
+        className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#15352e] px-4 text-sm font-medium text-white"
       >
         <Plus size={15} /> {triggerLabel}
       </button>
@@ -311,11 +322,11 @@ export function SearchBuilder({
           <form
             ref={formRef}
             onSubmit={(event) => event.preventDefault()}
-            className="h-full w-full max-w-[720px] overflow-y-auto bg-[#f8f7f3] shadow-2xl"
+            className="h-full w-full max-w-[720px] overflow-y-auto bg-[#f8f6f0] shadow-2xl"
           >
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#d9d6ce] bg-[#f8f7f3]/95 px-6 py-5 backdrop-blur">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#d9d6ce] bg-[#f8f6f0]/95 px-6 py-5 backdrop-blur">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[.14em] text-[#16856b]">
+                <p className="text-xs font-semibold uppercase tracking-[.14em] text-[#13745f]">
                   Suchkonfiguration
                 </p>
                 <h2 className="mt-1 text-xl font-semibold">
@@ -483,7 +494,7 @@ export function SearchBuilder({
                   type="button"
                   onClick={() => setAdvancedFinancials((value) => !value)}
                   aria-expanded={advancedFinancials}
-                  className="mt-4 text-xs font-semibold text-[#16856b]"
+                  className="mt-4 text-xs font-semibold text-[#13745f]"
                 >
                   {advancedFinancials
                     ? "− Erweiterte Finanzdaten ausblenden"
@@ -766,7 +777,7 @@ export function SearchBuilder({
                 </div>
               </div>
             </div>
-            <div className="sticky bottom-0 flex flex-wrap justify-between gap-3 border-t border-[#d9d6ce] bg-[#f8f7f3]/95 px-6 py-4 backdrop-blur">
+            <div className="sticky bottom-0 flex flex-wrap justify-between gap-3 border-t border-[#d9d6ce] bg-[#f8f6f0]/95 px-6 py-4 backdrop-blur">
               {message ? (
                 <p
                   role={messageTone === "error" ? "alert" : "status"}
@@ -823,7 +834,7 @@ export function SearchBuilder({
                       activateSchedule: executionMode === "recurring",
                     })
                   }
-                  className="flex h-10 items-center gap-2 rounded-lg bg-[#13201d] px-4 text-xs font-semibold text-white disabled:opacity-50"
+                  className="flex h-10 items-center gap-2 rounded-lg bg-[#15352e] px-4 text-xs font-semibold text-white disabled:opacity-50"
                 >
                   {activeAction === "run" || activeAction === "schedule" ? (
                     <LoaderCircle size={14} className="animate-spin" />
@@ -974,7 +985,7 @@ function StateSelector({
                 }
               />
               <span className="flex-1">{state.name}</span>
-              {checked ? <Check size={14} className="text-[#16856b]" /> : null}
+              {checked ? <Check size={14} className="text-[#13745f]" /> : null}
             </label>
           );
         })}

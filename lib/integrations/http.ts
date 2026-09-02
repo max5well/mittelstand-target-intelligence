@@ -32,8 +32,13 @@ export async function fetchProvider<T extends z.ZodType>(
       await new Promise((resolve) => setTimeout(resolve, backoff));
       continue;
     }
+    const providerHost = new URL(url).hostname;
+    const paymentHint =
+      response.status === 402
+        ? " The provider account has no usable credits or billing access."
+        : "";
     throw new ProviderError(
-      `Provider request failed with status ${response.status}`,
+      `Provider request to ${providerHost} failed with status ${response.status}.${paymentHint}`,
       response.status,
       retryAfterMs,
     );

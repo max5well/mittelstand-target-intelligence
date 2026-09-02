@@ -88,7 +88,7 @@ export default async function CompanyDetailPage({
           <Building2 size={22} />
         </span>
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[.1em] text-[#16856b]">
+          <p className="text-xs font-semibold uppercase tracking-[.1em] text-[#13745f]">
             {company.registerReference} · {company.registerCourt}
           </p>
           <h1 className="mt-1 text-3xl font-semibold tracking-[-.035em]">
@@ -345,7 +345,7 @@ export default async function CompanyDetailPage({
         <aside className="space-y-5">
           <section className="rounded-xl border border-[#d8d5cc] bg-[#faf9f6] p-5">
             <div className="flex items-center gap-2">
-              <ShieldCheck size={17} className="text-[#16856b]" />
+              <ShieldCheck size={17} className="text-[#13745f]" />
               <h2 className="text-base font-semibold">Verfügbare Aktionen</h2>
             </div>
             {readyProviders.length === 0 ? (
@@ -382,7 +382,7 @@ export default async function CompanyDetailPage({
 
           <section className="rounded-xl border border-[#d8d5cc] bg-[#faf9f6] p-5">
             <div className="flex items-center gap-2">
-              <History size={17} className="text-[#16856b]" />
+              <History size={17} className="text-[#13745f]" />
               <h2 className="text-base font-semibold">Ausführungshistorie</h2>
             </div>
             <p className="mt-2 text-sm leading-6 text-[#68736e]">

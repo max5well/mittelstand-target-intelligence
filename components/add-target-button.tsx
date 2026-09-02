@@ -43,7 +43,7 @@ export function AddTargetButton({ workspaceId }: { workspaceId: string }) {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#13201d] px-4 text-sm font-medium text-white"
+        className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#15352e] px-4 text-sm font-medium text-white"
       >
         <Plus size={15} /> Ziel hinzufügen
       </button>
@@ -64,11 +64,11 @@ export function AddTargetButton({ workspaceId }: { workspaceId: string }) {
         >
           <form
             action={submit}
-            className="w-full max-w-xl rounded-2xl border border-[#d7d4cc] bg-[#f8f7f3] p-6 shadow-2xl"
+            className="w-full max-w-xl rounded-2xl border border-[#d7d4cc] bg-[#f8f6f0] p-6 shadow-2xl"
           >
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[.13em] text-[#16856b]">
+                <p className="text-xs font-semibold uppercase tracking-[.13em] text-[#13745f]">
                   Manuelles Ziel
                 </p>
                 <h2
@@ -128,7 +128,7 @@ export function AddTargetButton({ workspaceId }: { workspaceId: string }) {
               </button>
               <button
                 disabled={saving}
-                className="h-10 rounded-lg bg-[#13201d] px-4 text-sm font-semibold text-white disabled:opacity-60"
+                className="h-10 rounded-lg bg-[#15352e] px-4 text-sm font-semibold text-white disabled:opacity-60"
               >
                 {saving ? "Wird gespeichert…" : "Ziel hinzufügen"}
               </button>

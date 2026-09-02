@@ -7,6 +7,7 @@ import {
   runOpenRegisterEnrichment,
   type OpenRegisterStage,
 } from "@/lib/enrichment/openregister";
+import { runExternalProviderEnrichment } from "@/lib/enrichment/external-providers";
 import {
   CompanySearchRequestSchema,
   OpenRegisterProvider,
@@ -20,6 +21,14 @@ type SavedSearchRow = {
   hydration_mode?: "lean" | "full" | "custom";
   hydration_stages?: string[];
 };
+
+export function shouldAutoDiscoverWebsites(search: SavedSearchRow) {
+  return (
+    search.hydration_stages?.includes("website_discovery") ||
+    search.hydration_mode === "lean" ||
+    search.hydration_mode === "full"
+  );
+}
 
 export async function runSavedSearch(search: SavedSearchRow) {
   const supabase = createAdminClient();
@@ -196,8 +205,44 @@ export async function runSavedSearch(search: SavedSearchRow) {
         }
       }
     }
+    let websiteDiscoveryCalls = 0;
+    let websitesAdded = 0;
+    let websitesUnavailable = 0;
+    let websiteCreditsUsed = 0;
+    const websiteDiscoveryErrors: Array<{
+      companyId: string;
+      message: string;
+    }> = [];
+    if (shouldAutoDiscoverWebsites(search)) {
+      for (const company of results) {
+        if (existingIds.has(company.company_id)) continue;
+        const companyId = companyByExternalId.get(company.company_id);
+        if (!companyId) continue;
+        try {
+          const outcome = await runExternalProviderEnrichment({
+            workspaceId: search.workspace_id,
+            companyId,
+            stage: "website_discovery",
+            searchRunId: run.id,
+          });
+          if (!outcome.skipped) websiteDiscoveryCalls += 1;
+          if (outcome.available) websitesAdded += 1;
+          else websitesUnavailable += 1;
+          websiteCreditsUsed += Number(outcome.job?.actual_credits ?? 0);
+        } catch (error) {
+          websiteDiscoveryErrors.push({
+            companyId: company.company_id,
+            message:
+              error instanceof Error
+                ? error.message
+                : "Unknown website discovery error",
+          });
+        }
+      }
+    }
     const completedAt = new Date();
-    const creditsUsed = 10 + enrichmentCalls * 10;
+    const creditsUsed =
+      10 + enrichmentCalls * 10 + Math.max(0, websiteCreditsUsed);
     await Promise.all([
       supabase
         .from("search_runs")
@@ -208,12 +253,20 @@ export async function runSavedSearch(search: SavedSearchRow) {
             provider_results_received: providerResults.length,
             post_filter_results: results.length,
             kg_name_verification: needsKgNameVerification,
+            website_discovery: {
+              attempted: websiteDiscoveryCalls,
+              added: websitesAdded,
+              unavailable: websitesUnavailable,
+            },
           },
           pages_scanned: 1,
           candidates_seen: providerResults.length,
           accepted_count: acceptedCount,
           credits_used: creditsUsed,
-          error_details: enrichmentErrors.length ? { enrichmentErrors } : null,
+          error_details:
+            enrichmentErrors.length || websiteDiscoveryErrors.length
+              ? { enrichmentErrors, websiteDiscoveryErrors }
+              : null,
           completed_at: completedAt.toISOString(),
         })
         .eq("id", run.id),
@@ -253,6 +306,10 @@ export async function runSavedSearch(search: SavedSearchRow) {
       enrichmentCalls,
       unavailable,
       enrichmentErrors: enrichmentErrors.length,
+      websiteDiscoveryCalls,
+      websitesAdded,
+      websitesUnavailable,
+      websiteDiscoveryErrors: websiteDiscoveryErrors.length,
       creditsUsed,
     };
   } catch (error) {

@@ -1,4 +1,4 @@
-# Unternehmen
+# Zielunternehmen
 
 Private target intelligence for discovering, assessing, prioritizing, and tracking German Mittelstand acquisition targets.
 

@@ -19,7 +19,7 @@ export function EmptyDataState({
       </p>
       <Link
         href="/settings?section=integrations"
-        className="mt-6 inline-flex h-10 items-center gap-2 rounded-lg bg-[#13201d] px-4 text-sm font-semibold text-white"
+        className="mt-6 inline-flex h-10 items-center gap-2 rounded-lg bg-[#15352e] px-4 text-sm font-semibold text-white"
       >
         <Cable size={15} /> Integrationen prüfen
       </Link>

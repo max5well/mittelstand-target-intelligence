@@ -11,6 +11,8 @@ import {
   type VisibilityState,
 } from "@tanstack/react-table";
 import {
+  Archive,
+  ArchiveRestore,
   ArrowDownUp,
   ChevronLeft,
   ChevronRight,
@@ -20,6 +22,7 @@ import {
   Search,
   SlidersHorizontal,
   Star,
+  Trash2,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -36,7 +39,10 @@ import {
 import { companiesToCsv } from "@/lib/company-csv";
 import { filterCompanies } from "@/lib/company-filters";
 
-const allStatuses: Array<PipelineStatus | "all"> = ["all", ...pipelineStatuses];
+const allStatuses: Array<PipelineStatus | "all"> = [
+  "all",
+  ...pipelineStatuses.filter((status) => status !== "archived"),
+];
 
 const columnLabels: Record<string, string> = {
   city: "Standort",
@@ -60,7 +66,14 @@ export function CompaniesTable({
   const [pendingFavorites, setPendingFavorites] = useState<Set<string>>(
     () => new Set(),
   );
+  const [pendingCompanyActions, setPendingCompanyActions] = useState<
+    Set<string>
+  >(() => new Set());
   const [favoriteError, setFavoriteError] = useState<string | null>(null);
+  const [companyActionError, setCompanyActionError] = useState<string | null>(
+    null,
+  );
+  const [archivedOnly, setArchivedOnly] = useState(false);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<PipelineStatus | "all">("all");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
@@ -76,6 +89,94 @@ export function CompaniesTable({
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [page, setPage] = useState(0);
   const pageSize = 12;
+
+  const updateArchiveStatus = useCallback(
+    async (companyId: string, archived: boolean) => {
+      setCompanyActionError(null);
+      setPendingCompanyActions((current) => new Set(current).add(companyId));
+      try {
+        const response = await fetch(`/api/companies/${companyId}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "x-workspace-id": workspaceId,
+          },
+          body: JSON.stringify({ archived }),
+        });
+        const result = (await response.json().catch(() => ({}))) as {
+          error?: string;
+          status?: PipelineStatus;
+        };
+        if (!response.ok || !result.status) {
+          throw new Error(
+            result.error ?? "Der Archivstatus konnte nicht gespeichert werden.",
+          );
+        }
+        setCompanies((current) =>
+          current.map((company) =>
+            company.id === companyId
+              ? { ...company, status: result.status as PipelineStatus }
+              : company,
+          ),
+        );
+      } catch (error) {
+        setCompanyActionError(
+          error instanceof Error
+            ? error.message
+            : "Der Archivstatus konnte nicht gespeichert werden.",
+        );
+      } finally {
+        setPendingCompanyActions((current) => {
+          const next = new Set(current);
+          next.delete(companyId);
+          return next;
+        });
+      }
+    },
+    [workspaceId],
+  );
+
+  const deleteCompany = useCallback(
+    async (companyId: string, companyName: string) => {
+      const confirmed = window.confirm(
+        `„${companyName}“ endgültig löschen? Alle verknüpften Unternehmensdaten werden entfernt. Diese Aktion kann nicht rückgängig gemacht werden.`,
+      );
+      if (!confirmed) return;
+
+      setCompanyActionError(null);
+      setPendingCompanyActions((current) => new Set(current).add(companyId));
+      try {
+        const response = await fetch(`/api/companies/${companyId}`, {
+          method: "DELETE",
+          headers: { "x-workspace-id": workspaceId },
+        });
+        const result = (await response.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(
+            result.error ?? "Das Unternehmen konnte nicht gelöscht werden.",
+          );
+        }
+        setCompanies((current) =>
+          current.filter((company) => company.id !== companyId),
+        );
+      } catch (error) {
+        setCompanyActionError(
+          error instanceof Error
+            ? error.message
+            : "Das Unternehmen konnte nicht gelöscht werden.",
+        );
+      } finally {
+        setPendingCompanyActions((current) => {
+          const next = new Set(current);
+          next.delete(companyId);
+          return next;
+        });
+      }
+    },
+    [workspaceId],
+  );
 
   const toggleFavorite = useCallback(
     async (companyId: string, favorite: boolean) => {
@@ -145,18 +246,30 @@ export function CompaniesTable({
       ),
     [companies],
   );
+  const activeCompanyCount = companies.filter(
+    (company) => company.status !== "archived",
+  ).length;
+  const archivedCompanyCount = companies.length - activeCompanyCount;
   const filtered = useMemo(
     () =>
-      filterCompanies(companies, {
-        query,
-        status,
-        favoritesOnly,
-        state: stateFilter,
-        city: cityFilter,
-        industry: industryFilter,
-        ownership: ownershipFilter,
-      }),
+      filterCompanies(
+        companies.filter((company) =>
+          archivedOnly
+            ? company.status === "archived"
+            : company.status !== "archived",
+        ),
+        {
+          query,
+          status,
+          favoritesOnly,
+          state: stateFilter,
+          city: cityFilter,
+          industry: industryFilter,
+          ownership: ownershipFilter,
+        },
+      ),
     [
+      archivedOnly,
       cityFilter,
       companies,
       favoritesOnly,
@@ -341,8 +454,60 @@ export function CompaniesTable({
             </span>
           ),
       },
+      {
+        id: "actions",
+        enableHiding: false,
+        enableSorting: false,
+        header: "Aktionen",
+        cell: ({ row }) => {
+          const isArchived = row.original.status === "archived";
+          const isPending = pendingCompanyActions.has(row.original.id);
+          return (
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                aria-label={
+                  isArchived
+                    ? `${row.original.name} aus dem Archiv holen`
+                    : `${row.original.name} archivieren`
+                }
+                title={isArchived ? "Aus Archiv holen" : "Archivieren"}
+                disabled={isPending}
+                onClick={() =>
+                  updateArchiveStatus(row.original.id, !isArchived)
+                }
+                className="grid size-8 place-items-center rounded-md text-[#52635e] transition hover:bg-[#e7eee9] hover:text-[#17644f] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#17644f] disabled:cursor-wait disabled:opacity-45"
+              >
+                {isArchived ? (
+                  <ArchiveRestore size={15} />
+                ) : (
+                  <Archive size={15} />
+                )}
+              </button>
+              <button
+                type="button"
+                aria-label={`${row.original.name} endgültig löschen`}
+                title="Endgültig löschen"
+                disabled={isPending}
+                onClick={() =>
+                  deleteCompany(row.original.id, row.original.name)
+                }
+                className="grid size-8 place-items-center rounded-md text-[#8d5c51] transition hover:bg-[#f9e9e6] hover:text-[#a23f34] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#a23f34] disabled:cursor-wait disabled:opacity-45"
+              >
+                <Trash2 size={15} />
+              </button>
+            </div>
+          );
+        },
+      },
     ],
-    [pendingFavorites, toggleFavorite],
+    [
+      deleteCompany,
+      pendingCompanyActions,
+      pendingFavorites,
+      toggleFavorite,
+      updateArchiveStatus,
+    ],
   );
 
   // TanStack Table intentionally returns stateful functions; React Compiler skips this hook.
@@ -356,10 +521,11 @@ export function CompaniesTable({
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
   });
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const visiblePage = Math.min(page, totalPages - 1);
   const rows = table
     .getRowModel()
-    .rows.slice(page * pageSize, (page + 1) * pageSize);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+    .rows.slice(visiblePage * pageSize, (visiblePage + 1) * pageSize);
 
   function exportCsv() {
     const sortedCompanies = table.getRowModel().rows.map((row) => row.original);
@@ -376,12 +542,12 @@ export function CompaniesTable({
 
   return (
     <section className="mt-6 overflow-hidden rounded-xl border border-[#d6d3cb] bg-[#faf9f6]">
-      {favoriteError ? (
+      {favoriteError || companyActionError ? (
         <p
           role="alert"
           className="border-b border-[#efc7bf] bg-[#f9e9e6] px-4 py-3 text-xs text-[#8b3f35]"
         >
-          {favoriteError}
+          {favoriteError ?? companyActionError}
         </p>
       ) : null}
       <div className="flex flex-wrap items-center gap-3 border-b border-[#dfddd6] p-4">
@@ -397,6 +563,36 @@ export function CompaniesTable({
             className="w-full bg-transparent outline-none"
           />
         </label>
+        <div
+          role="group"
+          aria-label="Unternehmen nach Archivstatus filtern"
+          className="flex h-9 items-center rounded-lg border border-[#d7d4cc] bg-white p-0.5 text-xs"
+        >
+          <button
+            type="button"
+            aria-pressed={!archivedOnly}
+            onClick={() => {
+              setArchivedOnly(false);
+              setStatus("all");
+              setPage(0);
+            }}
+            className={`h-7 rounded-md px-2.5 transition ${!archivedOnly ? "bg-[#e7eee9] font-semibold text-[#17644f]" : "text-[#66716d] hover:bg-[#f3f2ed]"}`}
+          >
+            Aktiv ({activeCompanyCount})
+          </button>
+          <button
+            type="button"
+            aria-pressed={archivedOnly}
+            onClick={() => {
+              setArchivedOnly(true);
+              setStatus("all");
+              setPage(0);
+            }}
+            className={`flex h-7 items-center gap-1.5 rounded-md px-2.5 transition ${archivedOnly ? "bg-[#e7eee9] font-semibold text-[#17644f]" : "text-[#66716d] hover:bg-[#f3f2ed]"}`}
+          >
+            <Archive size={12} /> Archiv ({archivedCompanyCount})
+          </button>
+        </div>
         <select
           aria-label="Nach Status filtern"
           value={status}
@@ -572,27 +768,37 @@ export function CompaniesTable({
                 ))}
               </tr>
             ))}
+            {!rows.length ? (
+              <tr>
+                <td
+                  colSpan={table.getVisibleLeafColumns().length}
+                  className="px-4 py-12 text-center text-sm text-[#75807c]"
+                >
+                  {archivedOnly
+                    ? "Das Archiv ist leer."
+                    : "Keine aktiven Unternehmen entsprechen den Filtern."}
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>
       <div className="flex items-center justify-between px-4 py-3 text-xs text-[#6d7773]">
         <p>
-          {filtered.length} freigegebene Unternehmen · Seite {page + 1} von{" "}
-          {totalPages}
+          {filtered.length} {archivedOnly ? "archivierte" : "aktive"}{" "}
+          Unternehmen · Seite {visiblePage + 1} von {totalPages}
         </p>
         <div className="flex gap-1">
           <button
-            disabled={page === 0}
-            onClick={() => setPage((value) => Math.max(0, value - 1))}
+            disabled={visiblePage === 0}
+            onClick={() => setPage(Math.max(0, visiblePage - 1))}
             className="grid size-8 place-items-center rounded border border-[#d7d4cc] bg-white disabled:opacity-40"
           >
             <ChevronLeft size={14} />
           </button>
           <button
-            disabled={page + 1 >= totalPages}
-            onClick={() =>
-              setPage((value) => Math.min(totalPages - 1, value + 1))
-            }
+            disabled={visiblePage + 1 >= totalPages}
+            onClick={() => setPage(Math.min(totalPages - 1, visiblePage + 1))}
             className="grid size-8 place-items-center rounded border border-[#d7d4cc] bg-white disabled:opacity-40"
           >
             <ChevronRight size={14} />

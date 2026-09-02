@@ -5,6 +5,7 @@ import {
   getOwnerPreviewIdentity,
   isOwnerOnlyPreviewMode,
 } from "@/lib/auth/preview";
+import { isAllowedGoogleUser } from "@/lib/auth/access";
 
 export type AppUser = {
   id: string;
@@ -53,6 +54,7 @@ export async function requireUser(): Promise<AppUser> {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user?.email) redirect("/login");
+  if (!isAllowedGoogleUser(user)) redirect("/login?reason=access_denied");
   const { data: membership } = await supabase
     .from("workspace_memberships")
     .select("workspace_id,role")

@@ -216,7 +216,7 @@ export function GermanyMap({ companies }: { companies: Company[] }) {
           >
             <X size={14} />
           </button>
-          <div className="flex items-center gap-2 pr-7 text-[#16856b]">
+          <div className="flex items-center gap-2 pr-7 text-[#13745f]">
             <MapPin size={14} />
             <p className="text-xs font-semibold uppercase tracking-[.1em]">
               {selected.key} · {selected.companies.length} Zielunternehmen
