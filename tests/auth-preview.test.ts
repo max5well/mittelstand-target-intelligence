@@ -1,14 +1,14 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { getOwnerPreviewIdentity } from "@/lib/auth/preview";
 
 const originalPreviewMode = process.env.OWNER_ONLY_PREVIEW_MODE;
-
 afterEach(() => {
   if (originalPreviewMode === undefined) {
     delete process.env.OWNER_ONLY_PREVIEW_MODE;
   } else {
     process.env.OWNER_ONLY_PREVIEW_MODE = originalPreviewMode;
   }
+  vi.unstubAllEnvs();
 });
 
 describe("owner-only preview authentication", () => {
@@ -34,6 +34,7 @@ describe("owner-only preview authentication", () => {
   });
 
   it("accepts the externally authenticated owner in preview mode", () => {
+    vi.stubEnv("NODE_ENV", "development");
     process.env.OWNER_ONLY_PREVIEW_MODE = "true";
     const requestHeaders = new Headers({
       "oai-authenticated-user-id": " owner-1 ",
@@ -44,5 +45,18 @@ describe("owner-only preview authentication", () => {
       id: "owner-1",
       email: "owner@example.com",
     });
+  });
+
+  it("always rejects preview headers in production", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    process.env.OWNER_ONLY_PREVIEW_MODE = "true";
+    expect(
+      getOwnerPreviewIdentity(
+        new Headers({
+          "oai-authenticated-user-id": "attacker",
+          "oai-authenticated-user-email": "attacker@example.com",
+        }),
+      ),
+    ).toBeNull();
   });
 });

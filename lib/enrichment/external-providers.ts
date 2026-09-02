@@ -3,13 +3,18 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/db/admin";
 import { ApolloProvider } from "@/lib/integrations/apollo";
-import { ProviderError } from "@/lib/integrations/http";
+import {
+  creditsForProviderOutcome,
+  ProviderError,
+  type ProviderRequestMetrics,
+} from "@/lib/integrations/http";
 import { OpenRegisterProvider } from "@/lib/integrations/openregister";
 import {
   FirecrawlProvider,
   TavilyProvider,
   type WebSource,
 } from "@/lib/integrations/web-research";
+import { SafePublicHttpUrlSchema, isPublicHttpUrl } from "@/lib/url-safety";
 
 export const externalProviderStages = [
   "website_discovery",
@@ -55,6 +60,9 @@ export async function runExternalProviderEnrichment(input: {
     throw new Error(
       `${config.provider} needs a verified company website before this action can run.`,
     );
+  const safeWebsite = company.website_url
+    ? SafePublicHttpUrlSchema.parse(company.website_url)
+    : null;
   const { data: location } = await supabase
     .from("company_locations")
     .select("city")
@@ -87,6 +95,7 @@ export async function runExternalProviderEnrichment(input: {
   }
 
   const startedAt = new Date();
+  const leaseExpiresAt = new Date(startedAt.getTime() + 55_000);
   const { data: job, error: jobError } = await supabase
     .from("enrichment_jobs")
     .insert({
@@ -96,27 +105,46 @@ export async function runExternalProviderEnrichment(input: {
       job_type: input.stage,
       status: "running",
       idempotency_key: `${input.companyId}:${input.stage}:${randomUUID()}`,
-      payload: { website: company.website_url },
+      payload: { website: safeWebsite },
       attempt_count: 1,
       estimated_credits: config.credits,
       started_at: startedAt.toISOString(),
+      heartbeat_at: startedAt.toISOString(),
+      lease_expires_at: leaseExpiresAt.toISOString(),
     })
     .select("id")
     .single();
+  if (jobError?.code === "23505") {
+    const { data: active } = await supabase
+      .from("enrichment_jobs")
+      .select("id,status,actual_credits,completed_at,payload")
+      .eq("workspace_id", input.workspaceId)
+      .eq("company_id", input.companyId)
+      .eq("provider", config.provider)
+      .eq("job_type", input.stage)
+      .eq("status", "running")
+      .maybeSingle();
+    if (active)
+      return { job: active, skipped: true, available: false, running: true };
+  }
   if (jobError || !job)
     throw new Error(jobError?.message ?? "Unable to create provider job");
 
   let httpStatus = 200;
+  let requestCount = 0;
+  let reportedCredits: number | null = null;
   try {
-    const domain = company.website_url
-      ? new URL(company.website_url).hostname.replace(/^www\./, "")
+    const domain = safeWebsite
+      ? new URL(safeWebsite).hostname.replace(/^www\./, "")
       : null;
     let returned = 0;
     if (input.stage === "apollo_organization") {
-      const result = await new ApolloProvider().enrichOrganization({
+      const provider = new ApolloProvider();
+      const result = await provider.enrichOrganization({
         domain: domain!,
         name: company.legal_name,
       });
+      requestCount = provider.lastRequestCount;
       if (result.organization) {
         returned = 1;
         const organization = result.organization;
@@ -124,7 +152,7 @@ export async function runExternalProviderEnrichment(input: {
           {
             workspace_id: input.workspaceId,
             company_id: input.companyId,
-            apollo_id: organization.id,
+            apollo_id: organization.id ?? `domain:${domain}`,
             domain: organization.primary_domain ?? domain,
             country: organization.country ?? null,
             match_confidence: null,
@@ -133,7 +161,14 @@ export async function runExternalProviderEnrichment(input: {
               organization.annual_revenue == null
                 ? null
                 : Math.round(organization.annual_revenue * 100),
-            hierarchy: {},
+            hierarchy: {
+              ownedBy: organization.owned_by_organization ?? null,
+              ultimateParent: organization.ultimate_parent_organization ?? null,
+              technologies: organization.technologies ?? [],
+              industry: organization.industry ?? null,
+              foundedYear: organization.founded_year ?? null,
+              totalFunding: organization.total_funding ?? null,
+            },
             retrieved_at: new Date().toISOString(),
             raw_payload: result,
           },
@@ -142,17 +177,24 @@ export async function runExternalProviderEnrichment(input: {
         if (error) throw new Error(error.message);
       }
     } else {
-      const sources =
-        input.stage === "firecrawl_website"
-          ? await new FirecrawlProvider().research({
-              companyName: company.legal_name,
-              verifiedDomain: company.website_url ?? undefined,
-            })
-          : await new TavilyProvider().research({
-              companyName: company.legal_name,
-              verifiedDomain: company.website_url ?? undefined,
-              city: location?.city ?? undefined,
-            });
+      let sources: WebSource[];
+      if (input.stage === "firecrawl_website") {
+        const provider = new FirecrawlProvider();
+        sources = await provider.research({
+          companyName: company.legal_name,
+          verifiedDomain: safeWebsite ?? undefined,
+        });
+        requestCount = provider.lastRequestCount;
+        reportedCredits = provider.lastCreditsUsed;
+      } else {
+        const provider = new TavilyProvider();
+        sources = await provider.research({
+          companyName: company.legal_name,
+          verifiedDomain: safeWebsite ?? undefined,
+          city: location?.city ?? undefined,
+        });
+        requestCount = provider.lastRequestCount;
+      }
       returned = await persistWebSources(
         input.workspaceId,
         input.companyId,
@@ -163,15 +205,20 @@ export async function runExternalProviderEnrichment(input: {
 
     const completedAt = new Date();
     const available = returned > 0;
+    const actualCredits =
+      process.env.MOCK_PROVIDERS === "false"
+        ? (reportedCredits ?? config.credits * Math.max(1, requestCount))
+        : 0;
     const [jobResult] = await Promise.all([
       supabase
         .from("enrichment_jobs")
         .update({
           status: "succeeded",
-          actual_credits: config.credits,
+          actual_credits: actualCredits,
           completed_at: completedAt.toISOString(),
+          lease_expires_at: null,
           payload: {
-            website: company.website_url,
+            website: safeWebsite,
             available,
             returned,
           },
@@ -185,8 +232,8 @@ export async function runExternalProviderEnrichment(input: {
         endpoint: config.endpoint,
         enrichment_job_id: job.id,
         estimated_credits: config.credits,
-        actual_credits: config.credits,
-        request_count: 1,
+        actual_credits: actualCredits,
+        request_count: Math.max(1, requestCount),
         http_status: httpStatus,
         duration_ms: completedAt.getTime() - startedAt.getTime(),
       }),
@@ -195,14 +242,23 @@ export async function runExternalProviderEnrichment(input: {
     return { job: jobResult.data, skipped: false, available, returned };
   } catch (error) {
     if (error instanceof ProviderError) httpStatus = error.status;
+    const attempts =
+      error instanceof ProviderError
+        ? error.requestCount
+        : Math.max(1, requestCount);
+    const actualCredits =
+      process.env.MOCK_PROVIDERS === "false"
+        ? creditsForProviderOutcome(config.credits, error, attempts)
+        : 0;
     const completedAt = new Date();
     await Promise.all([
       supabase
         .from("enrichment_jobs")
         .update({
           status: "failed",
-          actual_credits: config.credits,
+          actual_credits: actualCredits,
           completed_at: completedAt.toISOString(),
+          lease_expires_at: null,
           error_details: {
             message:
               error instanceof Error ? error.message : "Unknown provider error",
@@ -215,8 +271,8 @@ export async function runExternalProviderEnrichment(input: {
         endpoint: config.endpoint,
         enrichment_job_id: job.id,
         estimated_credits: config.credits,
-        actual_credits: config.credits,
-        request_count: 1,
+        actual_credits: actualCredits,
+        request_count: attempts,
         http_status: httpStatus,
         duration_ms: completedAt.getTime() - startedAt.getTime(),
       }),
@@ -281,6 +337,7 @@ async function runWebsiteDiscovery(input: {
   }
 
   const startedAt = new Date();
+  const leaseExpiresAt = new Date(startedAt.getTime() + 55_000);
   const { data: job, error: jobError } = await supabase
     .from("enrichment_jobs")
     .insert({
@@ -293,11 +350,26 @@ async function runWebsiteDiscovery(input: {
       idempotency_key: `${input.companyId}:website_discovery:${randomUUID()}`,
       payload: { legalName: company.legal_name, city: location?.city ?? null },
       attempt_count: 1,
-      estimated_credits: input.searchRunId ? 4 : 12,
+      estimated_credits: input.searchRunId ? 4 : 14,
       started_at: startedAt.toISOString(),
+      heartbeat_at: startedAt.toISOString(),
+      lease_expires_at: leaseExpiresAt.toISOString(),
     })
     .select("id")
     .single();
+  if (jobError?.code === "23505") {
+    const { data: active } = await supabase
+      .from("enrichment_jobs")
+      .select("id,status,actual_credits,completed_at,payload")
+      .eq("workspace_id", input.workspaceId)
+      .eq("company_id", input.companyId)
+      .eq("provider", "tavily")
+      .eq("job_type", "website_discovery")
+      .eq("status", "running")
+      .maybeSingle();
+    if (active)
+      return { job: active, skipped: true, available: false, running: true };
+  }
   if (jobError || !job)
     throw new Error(
       jobError?.message ?? "Unable to create website discovery job",
@@ -334,16 +406,25 @@ async function runWebsiteDiscovery(input: {
     let evidenceSignals: WebsiteEvidenceSignal[] = [];
     let selectedSources: WebSource[] = [];
     let lookupBlocked = false;
+    let openRegisterLookupAttempted = false;
     const allowOpenRegisterLookup = !input.searchRunId;
+    const tavily = new TavilyProvider();
+    const firecrawl = new FirecrawlProvider();
 
     const discover = async (
       provider: "tavily" | "firecrawl",
       endpoint: string,
       request: () => Promise<WebSource[]>,
+      telemetry: () => { requestCount: number; reportedCredits: number | null },
     ) => {
       const requestStartedAt = Date.now();
       try {
         const sources = await request();
+        const usage = telemetry();
+        const actualCredits =
+          process.env.MOCK_PROVIDERS === "false"
+            ? (usage.reportedCredits ?? 2 * Math.max(1, usage.requestCount))
+            : 0;
         attempts.push({
           provider,
           status: "succeeded",
@@ -355,14 +436,19 @@ async function runWebsiteDiscovery(input: {
           endpoint,
           enrichment_job_id: job.id,
           estimated_credits: 2,
-          actual_credits: 2,
-          request_count: 1,
+          actual_credits: actualCredits,
+          request_count: Math.max(1, usage.requestCount),
           http_status: 200,
           duration_ms: Date.now() - requestStartedAt,
         });
         return sources;
       } catch (error) {
         const status = error instanceof ProviderError ? error.status : 500;
+        const usage = telemetry();
+        const requestCount =
+          error instanceof ProviderError
+            ? error.requestCount
+            : Math.max(1, usage.requestCount);
         attempts.push({
           provider,
           status: "failed",
@@ -375,8 +461,11 @@ async function runWebsiteDiscovery(input: {
           endpoint,
           enrichment_job_id: job.id,
           estimated_credits: 2,
-          actual_credits: 0,
-          request_count: 1,
+          actual_credits:
+            process.env.MOCK_PROVIDERS === "false"
+              ? creditsForProviderOutcome(2, error, requestCount)
+              : 0,
+          request_count: requestCount,
           http_status: status,
           duration_ms: Date.now() - requestStartedAt,
         });
@@ -404,15 +493,19 @@ async function runWebsiteDiscovery(input: {
       }
       if (
         allowOpenRegisterLookup &&
+        !openRegisterLookupAttempted &&
         !lookupBlocked &&
         company.openregister_company_id &&
         !company.openregister_company_id.startsWith("manual:")
       ) {
         for (const candidate of candidates.slice(0, 1)) {
+          openRegisterLookupAttempted = true;
           const requestStartedAt = Date.now();
+          const lookupMetrics: ProviderRequestMetrics = { requestCount: 0 };
           try {
             const match = await new OpenRegisterProvider().lookupCompanyByUrl(
               candidate.url,
+              lookupMetrics,
             );
             attempts.push({
               provider: "openregister",
@@ -426,8 +519,11 @@ async function runWebsiteDiscovery(input: {
               endpoint: "GET /v0/search/lookup",
               enrichment_job_id: job.id,
               estimated_credits: 10,
-              actual_credits: 10,
-              request_count: 1,
+              actual_credits:
+                process.env.MOCK_PROVIDERS === "false"
+                  ? 10 * Math.max(1, lookupMetrics.requestCount)
+                  : 0,
+              request_count: Math.max(1, lookupMetrics.requestCount),
               http_status: 200,
               duration_ms: Date.now() - requestStartedAt,
             });
@@ -439,6 +535,10 @@ async function runWebsiteDiscovery(input: {
             }
           } catch (error) {
             const status = error instanceof ProviderError ? error.status : 500;
+            const requestCount =
+              error instanceof ProviderError
+                ? error.requestCount
+                : Math.max(1, lookupMetrics.requestCount);
             attempts.push({
               provider: "openregister",
               status: "failed",
@@ -452,8 +552,11 @@ async function runWebsiteDiscovery(input: {
               endpoint: "GET /v0/search/lookup",
               enrichment_job_id: job.id,
               estimated_credits: 10,
-              actual_credits: status === 402 ? 0 : 10,
-              request_count: 1,
+              actual_credits:
+                process.env.MOCK_PROVIDERS === "false"
+                  ? creditsForProviderOutcome(10, error, requestCount)
+                  : 0,
+              request_count: requestCount,
               http_status: status,
               duration_ms: Date.now() - requestStartedAt,
             });
@@ -465,8 +568,6 @@ async function runWebsiteDiscovery(input: {
       return false;
     };
 
-    const tavily = new TavilyProvider();
-    const firecrawl = new FirecrawlProvider();
     let tavilySources: WebSource[] | null = null;
     if (tavily.isAvailable())
       tavilySources = await discover(
@@ -477,6 +578,10 @@ async function runWebsiteDiscovery(input: {
             companyName: company.legal_name,
             city: profile.city ?? undefined,
           }),
+        () => ({
+          requestCount: tavily.lastRequestCount,
+          reportedCredits: null,
+        }),
       );
     else attempts.push({ provider: "tavily", status: "skipped" });
 
@@ -492,6 +597,10 @@ async function runWebsiteDiscovery(input: {
               companyName: company.legal_name,
               city: profile.city ?? undefined,
             }),
+          () => ({
+            requestCount: firecrawl.lastRequestCount,
+            reportedCredits: firecrawl.lastCreditsUsed,
+          }),
         );
         if (firecrawlSources?.length) await verifyCandidates(firecrawlSources);
       } else attempts.push({ provider: "firecrawl", status: "skipped" });
@@ -544,6 +653,7 @@ async function runWebsiteDiscovery(input: {
           status: "succeeded",
           actual_credits: actualCredits,
           completed_at: completedAt.toISOString(),
+          lease_expires_at: null,
           payload: {
             available,
             returned: available ? 1 : 0,
@@ -581,6 +691,7 @@ async function runWebsiteDiscovery(input: {
           status: "failed",
           actual_credits: actualCredits,
           completed_at: completedAt.toISOString(),
+          lease_expires_at: null,
           error_details: {
             message:
               error instanceof Error
@@ -649,6 +760,7 @@ export function selectOfficialWebsiteCandidates(
   const candidates = new Map<string, OfficialWebsiteCandidate>();
   for (const source of sources) {
     if (!isRelevantTavilySource(companyName, source)) continue;
+    if (!isPublicHttpUrl(source.url)) continue;
     try {
       const parsed = new URL(source.url);
       const hostname = parsed.hostname.replace(/^www\./, "").toLowerCase();

@@ -10,8 +10,14 @@ import {
 import { runExternalProviderEnrichment } from "@/lib/enrichment/external-providers";
 import {
   CompanySearchRequestSchema,
+  type CompanySearchResponse,
   OpenRegisterProvider,
 } from "@/lib/integrations/openregister";
+import {
+  creditsForProviderOutcome,
+  ProviderError,
+  type ProviderRequestMetrics,
+} from "@/lib/integrations/http";
 
 type SavedSearchRow = {
   id: string;
@@ -49,7 +55,7 @@ export async function runSavedSearch(search: SavedSearchRow) {
       status: "running",
       exact_filters: filters,
       started_at: now.toISOString(),
-      credits_estimated: 10,
+      credits_estimated: 100,
     })
     .select("id")
     .single();
@@ -67,7 +73,7 @@ export async function runSavedSearch(search: SavedSearchRow) {
       idempotency_key: `${runKey}:search`,
       payload: { filters, target },
       attempt_count: 1,
-      estimated_credits: 10,
+      estimated_credits: 100,
       started_at: now.toISOString(),
     })
     .select("id")
@@ -77,6 +83,7 @@ export async function runSavedSearch(search: SavedSearchRow) {
       searchJobError?.message ?? "Unable to record discovery job",
     );
 
+  let searchRequestCount = 0;
   try {
     const legalFormFilter = filters.find(
       (filter) => filter.field === "legal_form",
@@ -88,11 +95,51 @@ export async function runSavedSearch(search: SavedSearchRow) {
     const requestedResults = needsKgNameVerification
       ? Math.min(100, Math.max(target, target * 3))
       : target;
-    const response = await new OpenRegisterProvider().search({
-      filters,
-      pagination: { page: 1, per_page: requestedResults },
-    });
-    const providerResults = response.results;
+    const provider = new OpenRegisterProvider();
+    const providerResults: CompanySearchResponse["results"] = [];
+    let responseMetadata: Record<string, unknown> = {};
+    const maxSearchCredits = Math.max(
+      10,
+      Number(process.env.OPENREGISTER_SEARCH_CREDIT_CEILING ?? 100),
+    );
+    const maxPages = Math.max(1, Math.floor(maxSearchCredits / 10));
+    let pagesScanned = 0;
+    for (let page = 1; page <= maxPages; page += 1) {
+      const metrics: ProviderRequestMetrics = { requestCount: 0 };
+      const response = await provider.search(
+        {
+          filters,
+          pagination: { page, per_page: requestedResults },
+        },
+        metrics,
+      );
+      searchRequestCount += Math.max(1, metrics.requestCount);
+      pagesScanned += 1;
+      responseMetadata = response.pagination;
+      for (const company of response.results) {
+        if (
+          !providerResults.some(
+            (item) => item.company_id === company.company_id,
+          )
+        )
+          providerResults.push(company);
+      }
+      const qualifyingCount = selectedLegalForms.length
+        ? providerResults.filter((company) =>
+            matchesAcquisitionLegalForm(company, selectedLegalForms),
+          ).length
+        : providerResults.length;
+      const pagination = response.pagination as Record<string, unknown>;
+      const totalPages = Number(
+        pagination.total_pages ?? pagination.totalPages,
+      );
+      if (
+        qualifyingCount >= target ||
+        response.results.length < requestedResults ||
+        (Number.isFinite(totalPages) && page >= totalPages)
+      )
+        break;
+    }
     const results = (
       selectedLegalForms.length
         ? providerResults.filter((company) =>
@@ -174,6 +221,7 @@ export async function runSavedSearch(search: SavedSearchRow) {
       ["details", "financials", "owners"].includes(stage),
     );
     let enrichmentCalls = 0;
+    let enrichmentCreditsUsed = 0;
     let unavailable = 0;
     const enrichmentErrors: Array<{
       companyId: string;
@@ -192,6 +240,7 @@ export async function runSavedSearch(search: SavedSearchRow) {
             searchRunId: run.id,
           });
           if (!outcome.skipped) enrichmentCalls += 1;
+          enrichmentCreditsUsed += Number(outcome.job?.actual_credits ?? 0);
           if (!outcome.available) unavailable += 1;
         } catch (error) {
           enrichmentErrors.push({
@@ -241,15 +290,19 @@ export async function runSavedSearch(search: SavedSearchRow) {
       }
     }
     const completedAt = new Date();
+    const searchCredits =
+      process.env.MOCK_PROVIDERS === "false" ? searchRequestCount * 10 : 0;
     const creditsUsed =
-      10 + enrichmentCalls * 10 + Math.max(0, websiteCreditsUsed);
+      searchCredits +
+      Math.max(0, enrichmentCreditsUsed) +
+      Math.max(0, websiteCreditsUsed);
     await Promise.all([
       supabase
         .from("search_runs")
         .update({
           status: "succeeded",
           response_metadata: {
-            ...response.pagination,
+            ...responseMetadata,
             provider_results_received: providerResults.length,
             post_filter_results: results.length,
             kg_name_verification: needsKgNameVerification,
@@ -259,7 +312,7 @@ export async function runSavedSearch(search: SavedSearchRow) {
               unavailable: websitesUnavailable,
             },
           },
-          pages_scanned: 1,
+          pages_scanned: pagesScanned,
           candidates_seen: providerResults.length,
           accepted_count: acceptedCount,
           credits_used: creditsUsed,
@@ -274,7 +327,7 @@ export async function runSavedSearch(search: SavedSearchRow) {
         .from("enrichment_jobs")
         .update({
           status: "succeeded",
-          actual_credits: 10,
+          actual_credits: searchCredits,
           completed_at: completedAt.toISOString(),
           payload: {
             filters,
@@ -290,9 +343,9 @@ export async function runSavedSearch(search: SavedSearchRow) {
         provider: "openregister",
         endpoint: "POST /v1/search/company",
         enrichment_job_id: searchJob.id,
-        estimated_credits: 10,
-        actual_credits: 10,
-        request_count: 1,
+        estimated_credits: 100,
+        actual_credits: searchCredits,
+        request_count: Math.max(1, searchRequestCount),
         http_status: 200,
         duration_ms: completedAt.getTime() - now.getTime(),
       }),
@@ -314,6 +367,14 @@ export async function runSavedSearch(search: SavedSearchRow) {
     };
   } catch (error) {
     const completedAt = new Date().toISOString();
+    const requestCount =
+      error instanceof ProviderError
+        ? error.requestCount
+        : Math.max(1, searchRequestCount);
+    const actualCredits =
+      process.env.MOCK_PROVIDERS === "false"
+        ? creditsForProviderOutcome(10, error, requestCount)
+        : 0;
     await Promise.all([
       supabase
         .from("search_runs")
@@ -330,7 +391,7 @@ export async function runSavedSearch(search: SavedSearchRow) {
         .from("enrichment_jobs")
         .update({
           status: "failed",
-          actual_credits: 10,
+          actual_credits: actualCredits,
           completed_at: completedAt,
           error_details: {
             message:

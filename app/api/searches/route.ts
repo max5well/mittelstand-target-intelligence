@@ -4,6 +4,9 @@ import { authorizeWorkspaceRequest } from "@/lib/auth/api";
 import { createAdminClient } from "@/lib/db/admin";
 import { runSavedSearch } from "@/lib/discovery/run-saved-search";
 import { OpenRegisterFilterSchema } from "@/lib/integrations/openregister";
+import { reportApiError } from "@/lib/api-errors";
+
+export const maxDuration = 60;
 
 const CreateSearchSchema = z.object({
   name: z.string().trim().min(2).max(120),
@@ -40,7 +43,7 @@ export async function POST(request: Request) {
           ? ["details", "website_discovery"]
           : [];
     const monthlyCreditEstimate =
-      (10 + input.dailyTarget * (input.hydrationMode === "full" ? 34 : 14)) *
+      (100 + input.dailyTarget * (input.hydrationMode === "full" ? 34 : 14)) *
       30;
     const { data: search, error } = await supabase
       .from("saved_searches")
@@ -66,7 +69,7 @@ export async function POST(request: Request) {
     if (error || !search)
       return NextResponse.json(
         {
-          error: error?.message ?? "Die Suche konnte nicht gespeichert werden.",
+          error: "Die Suche konnte nicht gespeichert werden.",
         },
         { status: 500 },
       );
@@ -78,17 +81,15 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error: "Ungültige gespeicherte Suche.",
-          details: z.treeifyError(error),
         },
         { status: 400 },
       );
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Suche konnte nicht eingerichtet werden.",
-      },
+      await reportApiError(
+        error,
+        { route: "saved-search" },
+        "Die Suche konnte nicht eingerichtet werden. Bitte später erneut versuchen.",
+      ),
       { status: 502 },
     );
   }

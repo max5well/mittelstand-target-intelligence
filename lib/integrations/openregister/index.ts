@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { companies } from "@/lib/mock-data";
-import { fetchProvider } from "../http";
+import { fetchProvider, type ProviderRequestMetrics } from "../http";
 
 export const OpenRegisterFilterSchema = z
   .object({
@@ -45,7 +45,7 @@ export const CompanySearchRequestSchema = z.object({
     .default({ page: 1, per_page: 50 }),
 });
 
-const SearchItemSchema = z
+export const SearchItemSchema = z
   .object({
     company_id: z.string(),
     name: z.string(),
@@ -55,14 +55,105 @@ const SearchItemSchema = z
     register_court: z.string().optional(),
     active: z.boolean().optional(),
     legal_form: z.string().nullable().optional(),
-    address: z.unknown().optional(),
+    address: z
+      .object({
+        city: z.string().nullable().optional(),
+        country: z.string().nullable().optional(),
+        formatted_value: z.string().nullable().optional(),
+        street: z.string().nullable().optional(),
+        postal_code: z.string().nullable().optional(),
+        extra: z.string().nullable().optional(),
+      })
+      .passthrough()
+      .nullable()
+      .optional(),
   })
   .passthrough();
 const SearchResponseSchema = z.object({
   results: z.array(SearchItemSchema),
   pagination: z.record(z.string(), z.unknown()),
 });
-const GenericCompanyResponseSchema = z.record(z.string(), z.unknown());
+export type CompanySearchResponse = z.output<typeof SearchResponseSchema>;
+const NullableText = z.string().nullable().optional();
+const NullableNumber = z.number().nullable().optional();
+const CompanyDetailsSchema = z
+  .object({
+    id: NullableText,
+    name: z
+      .union([
+        z.string(),
+        z
+          .object({ name: NullableText, start_date: NullableText })
+          .passthrough(),
+      ])
+      .nullable()
+      .optional(),
+    legal_form: NullableText,
+    incorporated_at: NullableText,
+    register: z
+      .object({
+        register_number: NullableText,
+        register_type: NullableText,
+        register_court: NullableText,
+      })
+      .passthrough()
+      .nullable()
+      .optional(),
+    address: z.record(z.string(), z.unknown()).nullable().optional(),
+    contact: z.record(z.string(), z.unknown()).nullable().optional(),
+    purpose: z
+      .union([z.string(), z.record(z.string(), z.unknown())])
+      .nullable()
+      .optional(),
+    representation: z.array(z.record(z.string(), z.unknown())).optional(),
+    sources: z.array(z.record(z.string(), z.unknown())).optional(),
+    available: z.boolean().optional(),
+  })
+  .passthrough();
+const FinancialsSchema = z
+  .object({
+    available: z.boolean().optional(),
+    indicators: z
+      .array(
+        z
+          .object({
+            date: NullableText,
+            consolidated: z.boolean().nullable().optional(),
+            revenue: NullableNumber,
+            ebitda: NullableNumber,
+            ebit: NullableNumber,
+            net_income: NullableNumber,
+            equity: NullableNumber,
+            cash: NullableNumber,
+            financial_debt: NullableNumber,
+            balance_sheet_total: NullableNumber,
+            employees: NullableNumber,
+            report_id: NullableText,
+          })
+          .passthrough(),
+      )
+      .default([]),
+  })
+  .passthrough();
+const OwnersSchema = z
+  .object({
+    available: z.boolean().optional(),
+    best_available: z.boolean().optional(),
+    owners: z
+      .array(
+        z
+          .object({
+            id: NullableText,
+            name: z.string(),
+            type: NullableText,
+            percentage_share: NullableNumber,
+            nominal_share: NullableNumber,
+          })
+          .passthrough(),
+      )
+      .default([]),
+  })
+  .passthrough();
 const WebsiteLookupResponseSchema = z
   .object({
     company_id: z.string(),
@@ -95,11 +186,14 @@ export class OpenRegisterProvider {
     };
   }
 
-  async search(input: CompanySearchRequest) {
+  async search(
+    input: CompanySearchRequest,
+    metrics?: ProviderRequestMetrics,
+  ): Promise<CompanySearchResponse> {
     const request = CompanySearchRequestSchema.parse(input);
     if (this.mock) {
       const start = (request.pagination.page - 1) * request.pagination.per_page;
-      return {
+      return SearchResponseSchema.parse({
         results: companies
           .slice(start, start + request.pagination.per_page)
           .map((company) => ({
@@ -117,7 +211,7 @@ export class OpenRegisterProvider {
           total: companies.length,
           fixture: true,
         },
-      };
+      });
     }
     return fetchProvider(
       `${this.baseUrl}/v1/search/company`,
@@ -127,22 +221,35 @@ export class OpenRegisterProvider {
         body: JSON.stringify(request),
       },
       SearchResponseSchema,
+      3,
+      metrics,
     );
   }
 
-  async company(companyId: string, realtime = false) {
+  async company(companyId: string, metrics?: ProviderRequestMetrics) {
     return this.get(
-      `/v1/company/${encodeURIComponent(companyId)}${realtime ? "?realtime=true" : ""}`,
+      `/v1/company/${encodeURIComponent(companyId)}`,
+      CompanyDetailsSchema,
+      metrics,
     );
   }
-  async financials(companyId: string) {
-    return this.get(`/v1/company/${encodeURIComponent(companyId)}/financials`);
+  async financials(companyId: string, metrics?: ProviderRequestMetrics) {
+    return this.get(
+      `/v1/company/${encodeURIComponent(companyId)}/financials`,
+      FinancialsSchema,
+      metrics,
+    );
   }
-  async owners(companyId: string) {
-    return this.get(`/v1/company/${encodeURIComponent(companyId)}/owners`);
+  async owners(companyId: string, metrics?: ProviderRequestMetrics) {
+    const query = new URLSearchParams({ best_available: "true" });
+    return this.get(
+      `/v1/company/${encodeURIComponent(companyId)}/owners?${query}`,
+      OwnersSchema,
+      metrics,
+    );
   }
 
-  async lookupCompanyByUrl(url: string) {
+  async lookupCompanyByUrl(url: string, metrics?: ProviderRequestMetrics) {
     if (this.mock)
       return WebsiteLookupResponseSchema.parse({
         company_id: companies[0]?.openregisterCompanyId ?? "or_mock_18001",
@@ -152,12 +259,18 @@ export class OpenRegisterProvider {
       `${this.baseUrl}/v0/search/lookup?${query.toString()}`,
       { headers: this.headers() },
       WebsiteLookupResponseSchema,
+      1,
+      metrics,
     );
   }
 
-  private async get(path: string) {
+  private async get<T extends z.ZodType>(
+    path: string,
+    schema: T,
+    metrics?: ProviderRequestMetrics,
+  ) {
     if (this.mock)
-      return GenericCompanyResponseSchema.parse({
+      return schema.parse({
         fixture: true,
         fictional: true,
         path,
@@ -165,7 +278,9 @@ export class OpenRegisterProvider {
     return fetchProvider(
       `${this.baseUrl}${path}`,
       { headers: this.headers() },
-      GenericCompanyResponseSchema,
+      schema,
+      3,
+      metrics,
     );
   }
 }

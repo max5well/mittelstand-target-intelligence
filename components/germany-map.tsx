@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { LocateFixed, MapPin, X } from "lucide-react";
 import * as maplibregl from "maplibre-gl";
 import type { StyleSpecification } from "maplibre-gl";
@@ -11,6 +11,11 @@ import {
   type MapRef,
 } from "react-map-gl/maplibre";
 import type { Company } from "@/lib/types";
+import {
+  getMarkerPresentation,
+  mapModeConfig,
+  type MapMode,
+} from "@/lib/map-visualization";
 
 const GERMANY_BOUNDS: [[number, number], [number, number]] = [
   [5.5, 47.2],
@@ -55,8 +60,15 @@ type MarkerGroup = {
 export function GermanyMap({ companies }: { companies: Company[] }) {
   const mapRef = useRef<MapRef>(null);
   const [selected, setSelected] = useState<MarkerGroup | null>(null);
-  const [mode, setMode] = useState<"status" | "ownership" | "score">("status");
+  const [mode, setMode] = useState<MapMode>("status");
   const [mapError, setMapError] = useState(false);
+  const [fitNotice, setFitNotice] = useState("");
+
+  useEffect(() => {
+    if (!fitNotice) return;
+    const timeout = window.setTimeout(() => setFitNotice(""), 3000);
+    return () => window.clearTimeout(timeout);
+  }, [fitNotice]);
 
   const located = useMemo(
     () =>
@@ -89,45 +101,36 @@ export function GermanyMap({ companies }: { companies: Company[] }) {
     }));
   }, [located]);
 
-  function markerColor(group: MarkerGroup) {
-    const company = [...group.companies].sort(
-      (left, right) => (right.score ?? 0) - (left.score ?? 0),
-    )[0];
-    return mode === "score"
-      ? company.score && company.score >= 80
-        ? "#10a77f"
-        : company.score && company.score >= 65
-          ? "#d6a936"
-          : "#7f8b86"
-      : mode === "ownership"
-        ? company.ownership.includes("Family")
-          ? "#1f9d7a"
-          : company.ownership.includes("PE-backed")
-            ? "#8065b0"
-            : "#477b8c"
-        : group.companies.some((item) => item.status === "shortlisted")
-          ? "#08a77c"
-          : group.companies.every((item) => item.status === "passed")
-            ? "#7f8b86"
-            : "#327187";
-  }
-
   function fitResults() {
     if (!located.length) return;
+    const map = mapRef.current;
+    if (!map) return;
     const longitudes = located.map((company) => company.longitude!);
     const latitudes = located.map((company) => company.latitude!);
-    mapRef.current?.fitBounds(
-      [
-        [Math.min(...longitudes), Math.min(...latitudes)],
-        [Math.max(...longitudes), Math.max(...latitudes)],
-      ],
-      {
-        padding: { top: 110, right: 80, bottom: 80, left: 80 },
-        duration: 700,
-        maxZoom: 7.5,
-      },
+    const west = Math.min(...longitudes);
+    const east = Math.max(...longitudes);
+    const south = Math.min(...latitudes);
+    const north = Math.max(...latitudes);
+    if (west === east && south === north)
+      map.flyTo({ center: [west, south], zoom: 7.5, duration: 700 });
+    else
+      map.fitBounds(
+        [
+          [west, south],
+          [east, north],
+        ],
+        {
+          padding: { top: 150, right: 80, bottom: 80, left: 80 },
+          duration: 700,
+          maxZoom: 7.5,
+        },
+      );
+    setFitNotice(
+      `${located.length} ${located.length === 1 ? "Ergebnis" : "Ergebnisse"} eingepasst`,
     );
   }
+
+  const activeMode = mapModeConfig[mode];
 
   return (
     <div className="relative h-[620px] min-h-[520px] overflow-hidden rounded-xl border border-[#c9cec9] bg-[#dfe9e5] shadow-[0_14px_50px_rgba(31,55,48,.08)] md:h-[720px]">
@@ -153,46 +156,76 @@ export function GermanyMap({ companies }: { companies: Company[] }) {
         style={{ width: "100%", height: "100%" }}
       >
         <NavigationControl position="top-right" showCompass={false} />
-        {markerGroups.map((group) => (
-          <Marker
-            key={group.key}
-            latitude={group.latitude}
-            longitude={group.longitude}
-            anchor="center"
-          >
-            <button
-              onClick={() => setSelected(group)}
-              aria-label={`${group.companies.length} Unternehmen bei ${group.key} öffnen`}
-              className="group grid size-9 place-items-center rounded-full border-[3px] border-white text-xs font-bold text-white shadow-[0_7px_18px_rgba(20,34,30,.28)] transition hover:scale-110 focus-visible:scale-110 md:size-10"
-              style={{ background: markerColor(group) }}
+        {markerGroups.map((group) => {
+          const presentation = getMarkerPresentation(group.companies, mode);
+          return (
+            <Marker
+              key={group.key}
+              latitude={group.latitude}
+              longitude={group.longitude}
+              anchor="center"
             >
-              {group.companies.length}
-            </button>
-          </Marker>
-        ))}
+              <button
+                onClick={() => setSelected(group)}
+                aria-label={`${group.companies.length} Unternehmen bei ${group.key} öffnen · ${activeMode.label}: ${presentation.detail}`}
+                title={`${activeMode.label}: ${presentation.detail}`}
+                className="group grid size-9 place-items-center rounded-full border-[3px] border-white text-xs font-bold text-white shadow-[0_7px_18px_rgba(20,34,30,.28)] transition hover:scale-110 focus-visible:scale-110 md:size-10"
+                style={{ background: presentation.color }}
+              >
+                {group.companies.length}
+              </button>
+            </Marker>
+          );
+        })}
       </Map>
 
-      <div className="absolute left-3 top-3 z-10 flex max-w-[calc(100%-72px)] flex-wrap gap-1.5 rounded-lg border border-[#d5d2ca] bg-[#faf9f6]/95 p-2 shadow-md backdrop-blur md:left-4 md:top-4 md:gap-2">
-        {(["status", "ownership", "score"] as const).map((item) => (
+      <div className="absolute left-3 top-3 z-10 max-w-[calc(100%-72px)] rounded-lg border border-[#d5d2ca] bg-[#faf9f6]/95 p-2 shadow-md backdrop-blur md:left-4 md:top-4">
+        <div className="flex flex-wrap gap-1.5 md:gap-2">
+          {(["status", "ownership", "score"] as const).map((item) => (
+            <button
+              key={item}
+              onClick={() => setMode(item)}
+              aria-pressed={mode === item}
+              className={`rounded px-3 py-1.5 text-xs font-semibold ${mode === item ? "bg-[#14221e] text-white" : "text-[#63706b] hover:bg-[#ecebe5]"}`}
+            >
+              {mapModeConfig[item].label}
+            </button>
+          ))}
           <button
-            key={item}
-            onClick={() => setMode(item)}
-            aria-pressed={mode === item}
-            className={`rounded px-3 py-1.5 text-xs font-semibold capitalize ${mode === item ? "bg-[#14221e] text-white" : "text-[#63706b] hover:bg-[#ecebe5]"}`}
+            onClick={fitResults}
+            className="flex items-center gap-1 border-l border-[#d8d5cd] pl-3 text-xs font-semibold text-[#42645b] hover:text-[#0c725b]"
           >
-            {item === "status"
-              ? "Status"
-              : item === "ownership"
-                ? "Eigentümer"
-                : "Score"}
+            <LocateFixed size={12} /> Ergebnisse einpassen
           </button>
-        ))}
-        <button
-          onClick={fitResults}
-          className="flex items-center gap-1 border-l border-[#d8d5cd] pl-3 text-xs font-semibold text-[#42645b] hover:text-[#0c725b]"
-        >
-          <LocateFixed size={12} /> Ergebnisse einpassen
-        </button>
+        </div>
+        <div className="mt-2 border-t border-[#dedbd4] px-1 pt-2">
+          <p className="text-[10px] leading-4 text-[#68746f]">
+            {activeMode.description}
+          </p>
+          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
+            {activeMode.legend.map((item) => (
+              <span
+                key={item.key}
+                className="flex items-center gap-1.5 text-[10px] font-medium text-[#53615c]"
+              >
+                <span
+                  aria-hidden="true"
+                  className="size-2.5 rounded-full ring-1 ring-black/10"
+                  style={{ backgroundColor: item.color }}
+                />
+                {item.label}
+              </span>
+            ))}
+          </div>
+          <p aria-live="polite" className="sr-only">
+            {fitNotice}
+          </p>
+          {fitNotice ? (
+            <p className="mt-1.5 text-[10px] font-semibold text-[#13745f]">
+              {fitNotice}
+            </p>
+          ) : null}
+        </div>
       </div>
 
       <div className="absolute bottom-7 left-3 z-10 max-w-[calc(100%-28px)] rounded-lg border border-[#d4d1c9] bg-[#faf9f6]/95 px-3 py-2 text-xs text-[#53625d] shadow-sm backdrop-blur md:bottom-4 md:left-4">

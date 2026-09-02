@@ -182,7 +182,15 @@ export default function HomePage() {
           <div className="flex items-center gap-2 font-semibold text-[#15352e]">
             <BrandMark className="size-7" /> Zielunternehmen
           </div>
-          <p>Privater Zugang · DGE Technology</p>
+          <div className="flex items-center gap-4">
+            <Link
+              href="/datenschutz"
+              className="underline-offset-4 hover:underline"
+            >
+              Datenschutz
+            </Link>
+            <p>Privater Zugang · DGE Technology</p>
+          </div>
         </div>
       </footer>
     </main>

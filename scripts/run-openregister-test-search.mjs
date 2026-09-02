@@ -20,7 +20,11 @@ const response = await fetch("https://api.openregister.de/v1/search/company", {
 
 const payload = await response.json().catch(() => ({}));
 if (!response.ok) {
-  const message = payload?.error?.message ?? payload?.error ?? payload?.message ?? `HTTP ${response.status}`;
+  const message =
+    payload?.error?.message ??
+    payload?.error ??
+    payload?.message ??
+    `HTTP ${response.status}`;
   throw new Error(`OpenRegister discovery failed: ${message}`);
 }
 
@@ -52,13 +56,19 @@ const run = {
   pagination: payload.pagination ?? {},
   companies,
 };
-await writeFile("outputs/openregister-test-run.json", `${JSON.stringify(run, null, 2)}\n`, "utf8");
+await writeFile(
+  "outputs/openregister-test-run.json",
+  `${JSON.stringify(run, null, 2)}\n`,
+  "utf8",
+);
 
 const columns = Object.keys(companies[0] ?? {});
 const csvCell = (value) => `"${String(value).replaceAll('"', '""')}"`;
 const csv = [
   columns.map(csvCell).join(","),
-  ...companies.map((company) => columns.map((column) => csvCell(company[column])).join(",")),
+  ...companies.map((company) =>
+    columns.map((column) => csvCell(company[column])).join(","),
+  ),
 ].join("\n");
 await writeFile("outputs/openregister-test-run.csv", `${csv}\n`, "utf8");
 
@@ -69,15 +79,27 @@ console.log(
       httpStatus: response.status,
       requested: 10,
       received: companies.length,
-      totalAvailable: payload.pagination?.total_results ?? payload.pagination?.total ?? "N/A",
-      companies: companies.map(({ openregister_id, legal_name, legal_form, register_number, register_court }) => ({
-        openregister_id,
-        legal_name,
-        legal_form,
-        register_number,
-        register_court,
-      })),
-      saved: ["outputs/openregister-test-run.json", "outputs/openregister-test-run.csv"],
+      totalAvailable:
+        payload.pagination?.total_results ?? payload.pagination?.total ?? "N/A",
+      companies: companies.map(
+        ({
+          openregister_id,
+          legal_name,
+          legal_form,
+          register_number,
+          register_court,
+        }) => ({
+          openregister_id,
+          legal_name,
+          legal_form,
+          register_number,
+          register_court,
+        }),
+      ),
+      saved: [
+        "outputs/openregister-test-run.json",
+        "outputs/openregister-test-run.csv",
+      ],
     },
     null,
     2,

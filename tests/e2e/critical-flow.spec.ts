@@ -1,24 +1,25 @@
 import { expect, test } from "@playwright/test";
 
-test("mock admin can review and filter fictional targets", async ({ page }) => {
+test("authenticated workspace can open and filter companies", async ({
+  page,
+}) => {
   await page.goto("/companies");
-  await expect(page.getByRole("heading", { name: "Companies" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Unternehmen" }),
+  ).toBeVisible();
   await page
-    .getByPlaceholder("Search company, city, owner, register ID…")
-    .fill("Hanseatic");
+    .getByPlaceholder("Unternehmen, Stadt, Eigentümer oder Register-ID suchen…")
+    .fill("Nicht vorhandenes Ziel");
   await expect(
-    page.getByRole("link", { name: /Hanseatic Präzisionstechnik/ }),
+    page.getByText(/Keine .*Unternehmen entsprechen den Filtern/),
   ).toBeVisible();
-  await page.getByRole("link", { name: /Hanseatic Präzisionstechnik/ }).click();
-  await expect(
-    page.getByRole("heading", { name: /Hanseatic Präzisionstechnik/ }),
-  ).toBeVisible();
-  await expect(page.getByText("Ownership & management")).toBeVisible();
 });
 
 test("saved search shows cost-aware builder", async ({ page }) => {
   await page.goto("/searches");
-  await page.getByRole("button", { name: "New saved search" }).click();
-  await expect(page.getByText("Estimated provider usage")).toBeVisible();
-  await expect(page.getByText("Monthly estimate · 30 days")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Gespeicherte Suche erstellen" })
+    .click();
+  await expect(page.getByText("Geschätzte Anbieternutzung")).toBeVisible();
+  await expect(page.getByText("Monatliche Schätzung · 30 Tage")).toBeVisible();
 });

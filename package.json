@@ -25,6 +25,7 @@
     "format": "prettier --check .",
     "format:write": "prettier --write .",
     "test": "vitest run",
+    "test:rls": "supabase start && supabase db reset --local && node scripts/verify-rls-local.mjs",
     "test:e2e": "playwright test"
   },
   "dependencies": {

@@ -6,7 +6,7 @@ export default defineConfig({
   fullyParallel: true,
   use: { baseURL: "http://localhost:3000", trace: "on-first-retry" },
   webServer: {
-    command: "npm run dev",
+    command: "LOCAL_AUTH_BYPASS=true MOCK_PROVIDERS=true npm run dev",
     url: "http://localhost:3000/overview",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

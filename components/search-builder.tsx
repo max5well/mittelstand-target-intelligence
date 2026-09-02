@@ -23,7 +23,8 @@ import { germanStates, registerCourtsForStates } from "@/lib/german-states";
 import { wz2025Industries } from "@/lib/wz2025";
 
 const providerCosts = {
-  search: 10,
+  searchRunMaximum: 100,
+  previewSearch: 10,
   details: 10,
   financials: 10,
   owners: 10,
@@ -104,7 +105,7 @@ export function SearchBuilder({
   const [advancedFinancials, setAdvancedFinancials] = useState(false);
   const dailyCost = useMemo(
     () =>
-      providerCosts.search +
+      providerCosts.searchRunMaximum +
       dailyTarget *
         (providerCosts.details +
           providerCosts.websiteDiscovery +
@@ -772,7 +773,7 @@ export function SearchBuilder({
                     Die aktuellen Filter werden einmal an OpenRegister gesendet,
                     um nur die Zahl der passenden Unternehmen anzuzeigen. Es
                     werden keine Unternehmen gespeichert oder angereichert. Die
-                    Abfrage kostet {providerCosts.search} Credits.
+                    Abfrage kostet {providerCosts.previewSearch} Credits.
                   </p>
                 </div>
               </div>

@@ -5,7 +5,10 @@ import "server-only";
  * Supabase project. Never enable this on a public or shared deployment.
  */
 export function isOwnerOnlyPreviewMode(): boolean {
-  return process.env.OWNER_ONLY_PREVIEW_MODE === "true";
+  return (
+    process.env.NODE_ENV !== "production" &&
+    process.env.OWNER_ONLY_PREVIEW_MODE === "true"
+  );
 }
 
 export function getOwnerPreviewIdentity(requestHeaders: Headers): {

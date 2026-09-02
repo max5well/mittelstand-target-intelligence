@@ -4,7 +4,11 @@ import { randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/db/admin";
 import { geocodeRegisteredAddress } from "@/lib/geocoding/nominatim";
 import { OpenRegisterProvider } from "@/lib/integrations/openregister";
-import { ProviderError } from "@/lib/integrations/http";
+import {
+  creditsForProviderOutcome,
+  ProviderError,
+  type ProviderRequestMetrics,
+} from "@/lib/integrations/http";
 
 export const openRegisterStages = ["details", "financials", "owners"] as const;
 export type OpenRegisterStage = (typeof openRegisterStages)[number];
@@ -67,6 +71,7 @@ export async function runOpenRegisterEnrichment(input: {
   }
 
   const startedAt = new Date();
+  const leaseExpiresAt = new Date(startedAt.getTime() + 55_000);
   const cost = stageCost(input.stage);
   const { data: job, error: jobError } = await supabase
     .from("enrichment_jobs")
@@ -82,28 +87,47 @@ export async function runOpenRegisterEnrichment(input: {
       attempt_count: 1,
       estimated_credits: cost,
       started_at: startedAt.toISOString(),
+      heartbeat_at: startedAt.toISOString(),
+      lease_expires_at: leaseExpiresAt.toISOString(),
     })
     .select("id")
     .single();
+  if (jobError?.code === "23505") {
+    const { data: active } = await supabase
+      .from("enrichment_jobs")
+      .select("id,status,actual_credits,completed_at,payload")
+      .eq("workspace_id", input.workspaceId)
+      .eq("company_id", input.companyId)
+      .eq("provider", "openregister")
+      .eq("job_type", input.stage)
+      .eq("status", "running")
+      .maybeSingle();
+    if (active)
+      return { job: active, skipped: true, available: false, running: true };
+  }
   if (jobError || !job)
     throw new Error(jobError?.message ?? "Unable to create enrichment job");
 
   let httpStatus = 200;
+  const metrics: ProviderRequestMetrics = { requestCount: 0 };
   try {
     const provider = new OpenRegisterProvider();
     let payload: JsonRecord;
     try {
       payload =
         input.stage === "details"
-          ? await provider.company(company.openregister_company_id)
+          ? await provider.company(company.openregister_company_id, metrics)
           : input.stage === "financials"
-            ? await provider.financials(company.openregister_company_id)
-            : await provider.owners(company.openregister_company_id);
+            ? await provider.financials(
+                company.openregister_company_id,
+                metrics,
+              )
+            : await provider.owners(company.openregister_company_id, metrics);
     } catch (error) {
       if (
         error instanceof ProviderError &&
         error.status === 404 &&
-        input.stage !== "details"
+        input.stage === "financials"
       ) {
         httpStatus = 404;
         payload = { available: false, reason: "not_reported_by_provider" };
@@ -126,13 +150,18 @@ export async function runOpenRegisterEnrichment(input: {
       );
 
     const completedAt = new Date();
+    const actualCredits =
+      process.env.MOCK_PROVIDERS === "false"
+        ? cost * Math.max(1, metrics.requestCount)
+        : 0;
     const [jobResult] = await Promise.all([
       supabase
         .from("enrichment_jobs")
         .update({
           status: "succeeded",
-          actual_credits: cost,
+          actual_credits: actualCredits,
           completed_at: completedAt.toISOString(),
+          lease_expires_at: null,
           payload: {
             companyId: company.openregister_company_id,
             available,
@@ -148,8 +177,8 @@ export async function runOpenRegisterEnrichment(input: {
         endpoint: endpointFor(input.stage),
         enrichment_job_id: job.id,
         estimated_credits: cost,
-        actual_credits: cost,
-        request_count: 1,
+        actual_credits: actualCredits,
+        request_count: Math.max(1, metrics.requestCount),
         http_status: httpStatus,
         duration_ms: completedAt.getTime() - startedAt.getTime(),
       }),
@@ -158,13 +187,22 @@ export async function runOpenRegisterEnrichment(input: {
     return { job: jobResult.data, skipped: false, available };
   } catch (error) {
     const completedAt = new Date();
+    const requestCount =
+      error instanceof ProviderError
+        ? error.requestCount
+        : Math.max(1, metrics.requestCount);
+    const actualCredits =
+      process.env.MOCK_PROVIDERS === "false"
+        ? creditsForProviderOutcome(cost, error, requestCount)
+        : 0;
     await Promise.all([
       supabase
         .from("enrichment_jobs")
         .update({
           status: "failed",
-          actual_credits: cost,
+          actual_credits: actualCredits,
           completed_at: completedAt.toISOString(),
+          lease_expires_at: null,
           error_details: {
             message:
               error instanceof Error
@@ -179,8 +217,8 @@ export async function runOpenRegisterEnrichment(input: {
         endpoint: endpointFor(input.stage),
         enrichment_job_id: job.id,
         estimated_credits: cost,
-        actual_credits: cost,
-        request_count: 1,
+        actual_credits: actualCredits,
+        request_count: requestCount,
         http_status: error instanceof ProviderError ? error.status : null,
         duration_ms: completedAt.getTime() - startedAt.getTime(),
       }),
@@ -216,11 +254,19 @@ async function persistDetails(
     asText(contact.url);
   const companyUpdate = {
     ...(legalName ? { legal_name: legalName } : {}),
-    legal_form: asText(payload.legal_form),
-    register_number: asText(register.register_number),
-    website_url: website,
-    purpose: asText(purpose.purpose) ?? asText(payload.purpose),
-    incorporation_date: asText(payload.incorporated_at),
+    ...(asText(payload.legal_form)
+      ? { legal_form: asText(payload.legal_form) }
+      : {}),
+    ...(asText(register.register_number)
+      ? { register_number: asText(register.register_number) }
+      : {}),
+    ...(website ? { website_url: website } : {}),
+    ...((asText(purpose.purpose) ?? asText(payload.purpose))
+      ? { purpose: asText(purpose.purpose) ?? asText(payload.purpose) }
+      : {}),
+    ...(asText(payload.incorporated_at)
+      ? { incorporation_date: asText(payload.incorporated_at) }
+      : {}),
     hydration_stage: "profiled",
     raw_provider_payload: payload,
     updated_at: now,
@@ -401,10 +447,9 @@ async function persistOwners(
         owner_name: ownerName,
         owner_type: asText(owner.type),
         ownership_percent: asNumber(owner.percentage_share),
-        nominal_share_cents:
-          asNumber(owner.nominal_share) == null
-            ? null
-            : Math.round(asNumber(owner.nominal_share)! * 100),
+        // OpenRegister documents this as a share/capital amount, not EUR.
+        // Preserve the source value in raw_payload until the unit is explicit.
+        nominal_share_cents: null,
         best_available: Boolean(payload.best_available),
         source_provider: "openregister",
         source_identifier: asText(owner.id),

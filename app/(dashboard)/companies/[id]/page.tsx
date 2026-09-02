@@ -13,7 +13,7 @@ import { CompanyActions } from "@/components/company-actions";
 import { requireUser } from "@/lib/auth/user";
 import { getCompanyById } from "@/lib/data/companies";
 import { getCompanyEnrichmentEvidence } from "@/lib/data/enrichment";
-import { listJobs } from "@/lib/data/jobs";
+import { getProviderHealth, listJobs } from "@/lib/data/jobs";
 import {
   formatMoney,
   formatPercent,
@@ -32,9 +32,10 @@ export default async function CompanyDetailPage({
   const [{ id }, user] = await Promise.all([params, requireUser()]);
   const company = await getCompanyById(user.workspaceId, user.id, id);
   if (!company) notFound();
-  const [jobs, enrichment] = await Promise.all([
+  const [jobs, enrichment, providerHealth] = await Promise.all([
     listJobs(user.workspaceId, company.id),
     getCompanyEnrichmentEvidence(user.workspaceId, company.id),
+    getProviderHealth(user.workspaceId),
   ]);
   const readyProviders = getIntegrationStatuses().filter(
     (provider) => provider.usable,
@@ -134,7 +135,7 @@ export default async function CompanyDetailPage({
             "Umsatz",
             formatMoney(company.revenueCents),
             company.fiscalYear
-              ? `Gemeldet · GJ ${company.fiscalYear}`
+              ? `Gemeldet · GJ ${company.fiscalYear}${formatRetrievedAt(company.financialRetrievedAt)}`
               : "Nicht gemeldet",
           ],
           [
@@ -148,7 +149,7 @@ export default async function CompanyDetailPage({
             "Beschäftigte",
             company.employees?.toLocaleString("de-DE") ?? "—",
             company.employeeYear
-              ? `Gemeldet · ${company.employeeYear}`
+              ? `Gemeldet · ${company.employeeYear}${formatRetrievedAt(company.financialRetrievedAt)}`
               : "Nicht gemeldet",
           ],
           [
@@ -157,7 +158,7 @@ export default async function CompanyDetailPage({
             company.ownership === "Unknown"
               ? "Nicht klassifiziert"
               : company.owners.length
-                ? `${company.owners.length} direkte${company.owners.length === 1 ? "r Eigentümereintrag" : " Eigentümereinträge"}`
+                ? `${company.owners.length} direkte${company.owners.length === 1 ? "r Eigentümereintrag" : " Eigentümereinträge"}${formatRetrievedAt(company.ownershipRetrievedAt)}`
                 : "Regelbasierte Klassifizierung; Eigentümer nicht verifiziert",
           ],
           [
@@ -258,7 +259,7 @@ export default async function CompanyDetailPage({
               empty="N/V"
               rows={company.owners.map(
                 (owner) =>
-                  `${owner.name}${owner.percentage === null ? "" : ` · ${owner.percentage}%`}`,
+                  `${owner.name}${owner.percentage === null ? "" : ` · ${formatPercent(owner.percentage)}`}`,
               )}
             />
           </div>
@@ -270,6 +271,7 @@ export default async function CompanyDetailPage({
                   <div className="rounded-lg border border-[#e0ddd5] bg-white p-4">
                     <p className="text-xs font-semibold uppercase tracking-[.08em] text-[#75807c]">
                       Apollo · geschätzte Daten
+                      {formatRetrievedAt(enrichment.apollo.retrieved_at)}
                     </p>
                     <div className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
                       <p>
@@ -301,6 +303,7 @@ export default async function CompanyDetailPage({
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="text-xs font-semibold uppercase tracking-[.08em] text-[#75807c]">
                         {source.provider} · Quellenbeleg
+                        {formatRetrievedAt(source.retrieved_at)}
                       </p>
                       <a
                         href={source.url}
@@ -370,10 +373,14 @@ export default async function CompanyDetailPage({
                 </p>
                 <CompanyActions
                   companyId={company.id}
+                  workspaceId={user.workspaceId}
                   previousRuns={previousRuns}
                   availableProviders={readyProviders.map(
                     (provider) => provider.id,
                   )}
+                  exhaustedProviders={Object.entries(providerHealth)
+                    .filter(([, health]) => health.state === "credit_exhausted")
+                    .map(([provider]) => provider)}
                   hasWebsite={Boolean(company.website)}
                 />
               </>
@@ -430,6 +437,14 @@ function displayWebsiteHost(value: string) {
   } catch {
     return value;
   }
+}
+
+function formatRetrievedAt(value: string | null | undefined) {
+  if (!value) return "";
+  return ` · abgerufen ${new Intl.DateTimeFormat("de-DE", {
+    dateStyle: "short",
+    timeZone: "Europe/Berlin",
+  }).format(new Date(value))}`;
 }
 
 function Field({ label, value }: { label: string; value: string }) {

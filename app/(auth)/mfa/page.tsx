@@ -1,6 +1,8 @@
 import { KeyRound } from "lucide-react";
 import { MfaFlow } from "@/components/mfa-flow";
 
+export const dynamic = "force-dynamic";
+
 export default function MfaPage() {
   return (
     <main className="grid min-h-screen place-items-center bg-[#15352e] p-5">

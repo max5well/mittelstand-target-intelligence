@@ -6,20 +6,46 @@ export class ProviderError extends Error {
     message: string,
     readonly status: number,
     readonly retryAfterMs?: number,
+    readonly requestCount = 1,
   ) {
     super(message);
   }
 }
+
+export type ProviderRequestMetrics = { requestCount: number };
+
+export const PROVIDER_REQUEST_TIMEOUT_MS = 15_000;
 
 export async function fetchProvider<T extends z.ZodType>(
   url: string,
   init: RequestInit,
   schema: T,
   attempts = 3,
+  metrics?: ProviderRequestMetrics,
 ): Promise<z.output<T>> {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const response = await fetch(url, { ...init, cache: "no-store" });
-    if (response.ok) return schema.parse(await response.json());
+    if (metrics) metrics.requestCount = attempt + 1;
+    const timeoutSignal = AbortSignal.timeout(PROVIDER_REQUEST_TIMEOUT_MS);
+    const signal = init.signal
+      ? AbortSignal.any([init.signal, timeoutSignal])
+      : timeoutSignal;
+    const response = await fetch(url, {
+      ...init,
+      cache: "no-store",
+      signal,
+    });
+    if (response.ok) {
+      try {
+        return schema.parse(await response.json());
+      } catch {
+        throw new ProviderError(
+          `Provider response from ${new URL(url).hostname} did not match the expected schema.`,
+          response.status,
+          undefined,
+          metrics?.requestCount ?? attempt + 1,
+        );
+      }
+    }
     const retryAfter = response.headers.get("retry-after");
     const retryAfterMs = retryAfter ? Number(retryAfter) * 1000 : undefined;
     if (
@@ -41,7 +67,33 @@ export async function fetchProvider<T extends z.ZodType>(
       `Provider request to ${providerHost} failed with status ${response.status}.${paymentHint}`,
       response.status,
       retryAfterMs,
+      metrics?.requestCount ?? attempt + 1,
     );
   }
-  throw new ProviderError("Provider request exhausted retries", 503);
+  throw new ProviderError(
+    "Provider request exhausted retries",
+    503,
+    undefined,
+    metrics?.requestCount ?? attempts,
+  );
+}
+
+/**
+ * Provider 402 responses and requests that never received an HTTP response do
+ * not consume provider credits. Other HTTP responses are conservatively
+ * treated as billable, once per request attempt.
+ */
+export function creditsForProviderOutcome(
+  estimatedCredits: number,
+  error: unknown,
+  requestCount = 1,
+) {
+  if (error instanceof ProviderError && error.status === 402) return 0;
+  if (
+    error instanceof DOMException &&
+    (error.name === "TimeoutError" || error.name === "AbortError")
+  )
+    return 0;
+  if (error instanceof TypeError) return 0;
+  return estimatedCredits * Math.max(1, requestCount);
 }

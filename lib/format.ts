@@ -1,11 +1,27 @@
 export function formatMoney(cents: number | null, compact = true) {
   if (cents === null) return "N/V";
+  const euros = cents / 100;
+  if (compact) {
+    const absolute = Math.abs(euros);
+    if (absolute >= 1_000_000_000)
+      return `${formatCompactNumber(euros / 1_000_000_000)} Mrd. €`;
+    if (absolute >= 1_000_000)
+      return `${formatCompactNumber(euros / 1_000_000)} Mio. €`;
+    if (absolute >= 1_000)
+      return `${formatCompactNumber(euros / 1_000)} Tsd. €`;
+  }
   return new Intl.NumberFormat("de-DE", {
     style: "currency",
     currency: "EUR",
-    notation: compact ? "compact" : "standard",
-    maximumFractionDigits: compact ? 1 : 2,
-  }).format(cents / 100);
+    maximumFractionDigits: compact ? 0 : 2,
+  }).format(euros);
+}
+
+function formatCompactNumber(value: number) {
+  return new Intl.NumberFormat("de-DE", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  }).format(value);
 }
 
 export function formatPercent(value: number | null) {

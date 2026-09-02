@@ -52,6 +52,7 @@ export type Company = {
   debtCents: number | null;
   totalAssetsCents: number | null;
   fiscalYear: number | null;
+  financialRetrievedAt: string | null;
   ownership: OwnershipCategory;
   ownershipConfidence: number;
   ownershipMethod:
@@ -61,6 +62,7 @@ export type Company = {
     | "manual";
   ownerSummary: string;
   owners: Array<{ name: string; type: string; percentage: number | null }>;
+  ownershipRetrievedAt: string | null;
   management: Array<{ name: string; role: string }>;
   purpose: string;
   incorporationDate: string | null;

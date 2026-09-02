@@ -10,9 +10,16 @@ export type IntegrationStatus = {
   usable: boolean;
   capabilities: string[];
   dashboardUrl: string;
+  operationalState: "healthy" | "credit_exhausted" | "degraded" | "unknown";
+  lastHttpStatus: number | null;
 };
 
-export function getIntegrationStatuses(): IntegrationStatus[] {
+export function getIntegrationStatuses(
+  health: Record<
+    string,
+    { state: IntegrationStatus["operationalState"]; httpStatus: number | null }
+  > = {},
+): IntegrationStatus[] {
   const destinationConfigured = Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
       (process.env.SUPABASE_SECRET_KEY ||
@@ -69,6 +76,8 @@ export function getIntegrationStatuses(): IntegrationStatus[] {
       destinationConfigured,
       liveMode,
       usable: configured && destinationConfigured && liveMode,
+      operationalState: health[definition.id]?.state ?? "unknown",
+      lastHttpStatus: health[definition.id]?.httpStatus ?? null,
     };
   });
 }

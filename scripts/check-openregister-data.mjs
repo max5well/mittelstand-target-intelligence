@@ -23,7 +23,11 @@ async function requestJson(url, options = {}) {
     return {
       ok: false,
       httpStatus: response.status,
-      error: payload?.error?.message ?? payload?.error ?? payload?.message ?? `HTTP ${response.status}`,
+      error:
+        payload?.error?.message ??
+        payload?.error ??
+        payload?.message ??
+        `HTTP ${response.status}`,
       payload: {},
     };
   }
@@ -37,19 +41,38 @@ const autocomplete = await requestJson(
 );
 const candidates = autocomplete.payload.results ?? [];
 const company =
-  candidates.find((candidate) => /^siemens mobility gmbh$/i.test(candidate.name ?? "")) ??
-  candidates.find((candidate) => /siemens mobility/i.test(candidate.name ?? "")) ??
+  candidates.find((candidate) =>
+    /^siemens mobility gmbh$/i.test(candidate.name ?? ""),
+  ) ??
+  candidates.find((candidate) =>
+    /siemens mobility/i.test(candidate.name ?? ""),
+  ) ??
   candidates[0];
 
 if (!company?.company_id) {
-  console.log(JSON.stringify({ ok: false, error: "No Siemens Mobility GmbH match returned" }, null, 2));
+  console.log(
+    JSON.stringify(
+      { ok: false, error: "No Siemens Mobility GmbH match returned" },
+      null,
+      2,
+    ),
+  );
   process.exit(1);
 }
 
 const [details, financials, owners] = await Promise.all([
-  requestJson(`https://api.openregister.de/v1/company/${encodeURIComponent(company.company_id)}`, { headers }),
-  requestJson(`https://api.openregister.de/v1/company/${encodeURIComponent(company.company_id)}/financials`, { headers }),
-  requestJson(`https://api.openregister.de/v1/company/${encodeURIComponent(company.company_id)}/owners`, { headers }),
+  requestJson(
+    `https://api.openregister.de/v1/company/${encodeURIComponent(company.company_id)}`,
+    { headers },
+  ),
+  requestJson(
+    `https://api.openregister.de/v1/company/${encodeURIComponent(company.company_id)}/financials`,
+    { headers },
+  ),
+  requestJson(
+    `https://api.openregister.de/v1/company/${encodeURIComponent(company.company_id)}/owners`,
+    { headers },
+  ),
 ]);
 
 const detailKeys = collectKeys(details.payload);
@@ -60,12 +83,29 @@ const report = {
   matchedCompany: company.name,
   details: {
     available: details.ok,
-    identity: hasAny(detailKeys, ["name", "legal_form"]) && hasAny(detailKeys, ["register", "register_number"]),
+    identity:
+      hasAny(detailKeys, ["name", "legal_form"]) &&
+      hasAny(detailKeys, ["register", "register_number"]),
     status: detailKeys.has("status"),
-    location: hasAny(detailKeys, ["address", "addresses", "city", "postal_code", "postcode"]),
-    management: hasAny(detailKeys, ["management", "managers", "representatives"]),
+    location: hasAny(detailKeys, [
+      "address",
+      "addresses",
+      "city",
+      "postal_code",
+      "postcode",
+    ]),
+    management: hasAny(detailKeys, [
+      "management",
+      "managers",
+      "representatives",
+    ]),
     industryCodes: hasAny(detailKeys, ["industry_codes", "industry_code"]),
-    contactData: hasAny(detailKeys, ["contact", "website_url", "email", "phone"]),
+    contactData: hasAny(detailKeys, [
+      "contact",
+      "website_url",
+      "email",
+      "phone",
+    ]),
     error: details.error,
   },
   financials: {
@@ -81,10 +121,19 @@ const report = {
   ownership: {
     available: owners.ok,
     owners: ownerKeys.has("owners"),
-    ownershipPercent: hasAny(ownerKeys, ["percentage_share", "ownership_percent"]),
+    ownershipPercent: hasAny(ownerKeys, [
+      "percentage_share",
+      "ownership_percent",
+    ]),
     sources: hasAny(ownerKeys, ["sources", "document_url"]),
-    directFamilyOwnedFlag: hasAny(ownerKeys, ["family_owned", "family_ownership"]),
-    directOwnerManagedFlag: hasAny(ownerKeys, ["owner_managed", "owner_managed_flag"]),
+    directFamilyOwnedFlag: hasAny(ownerKeys, [
+      "family_owned",
+      "family_ownership",
+    ]),
+    directOwnerManagedFlag: hasAny(ownerKeys, [
+      "owner_managed",
+      "owner_managed_flag",
+    ]),
     error: owners.error,
   },
 };

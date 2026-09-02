@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { authorizeWorkspaceRequest } from "@/lib/auth/api";
 import { createAdminClient } from "@/lib/db/admin";
+import { SafePublicHttpUrlSchema } from "@/lib/url-safety";
 
 const ManualCompanySchema = z.object({
   name: z.string().trim().min(2).max(240),
@@ -12,7 +13,7 @@ const ManualCompanySchema = z.object({
   industryCode: z.string().trim().max(40).optional().default(""),
   industry: z.string().trim().max(240).optional().default(""),
   website: z
-    .union([z.literal(""), z.string().url()])
+    .union([z.literal(""), SafePublicHttpUrlSchema])
     .optional()
     .default(""),
 });

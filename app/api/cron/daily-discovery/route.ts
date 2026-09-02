@@ -19,6 +19,36 @@ export async function POST(request: Request) {
       duplicateDeliveriesPrevented: true,
     });
   const supabase = createAdminClient();
+  const staleBefore = new Date().toISOString();
+  const { data: recoveredJobs, error: recoveryError } = await supabase
+    .from("enrichment_jobs")
+    .update({
+      status: "failed",
+      completed_at: staleBefore,
+      error_details: {
+        message: "Provider job exceeded its execution lease.",
+        recoveredBy: "daily-discovery",
+      },
+    })
+    .eq("status", "running")
+    .lt("lease_expires_at", staleBefore)
+    .select("id");
+  if (recoveryError)
+    console.error(
+      JSON.stringify({
+        level: "error",
+        event: "stale-job-recovery-failed",
+        message: recoveryError.message,
+      }),
+    );
+  else if (recoveredJobs?.length)
+    console.warn(
+      JSON.stringify({
+        level: "warning",
+        event: "stale-enrichment-jobs-recovered",
+        count: recoveredJobs.length,
+      }),
+    );
   const today = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Berlin",
     year: "numeric",

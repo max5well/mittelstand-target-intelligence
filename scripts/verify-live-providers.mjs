@@ -22,7 +22,13 @@ for (const key of requiredKeys) {
   if (!process.env[key]) throw new Error(`${key} is not configured`);
 }
 
-async function checkedRequest(provider, endpoint, estimatedCredits, request, summarize) {
+async function checkedRequest(
+  provider,
+  endpoint,
+  estimatedCredits,
+  request,
+  summarize,
+) {
   const startedAt = Date.now();
   let response;
   let payload;
@@ -38,25 +44,34 @@ async function checkedRequest(provider, endpoint, estimatedCredits, request, sum
     }
     if (!response.ok) {
       errorMessage =
-        payload?.error?.message ?? payload?.error ?? payload?.message ?? `HTTP ${response.status}`;
+        payload?.error?.message ??
+        payload?.error ??
+        payload?.message ??
+        `HTTP ${response.status}`;
     }
   } catch (error) {
-    errorMessage = error instanceof Error ? error.message : "Network request failed";
+    errorMessage =
+      error instanceof Error ? error.message : "Network request failed";
   }
 
   const durationMs = Date.now() - startedAt;
   const httpStatus = response?.status ?? 0;
-  const { error: insertError } = await supabase.from("provider_usage_events").insert({
-    workspace_id: workspaceId,
-    provider,
-    endpoint,
-    estimated_credits: estimatedCredits,
-    actual_credits: response?.ok ? estimatedCredits : 0,
-    request_count: 1,
-    http_status: httpStatus,
-    duration_ms: durationMs,
-  });
-  if (insertError) throw new Error(`Unable to record ${provider} verification: ${insertError.message}`);
+  const { error: insertError } = await supabase
+    .from("provider_usage_events")
+    .insert({
+      workspace_id: workspaceId,
+      provider,
+      endpoint,
+      estimated_credits: estimatedCredits,
+      actual_credits: response?.ok ? estimatedCredits : 0,
+      request_count: 1,
+      http_status: httpStatus,
+      duration_ms: durationMs,
+    });
+  if (insertError)
+    throw new Error(
+      `Unable to record ${provider} verification: ${insertError.message}`,
+    );
 
   const summary = response?.ok ? summarize(payload) : null;
   return {
@@ -80,10 +95,14 @@ results.push(
     {
       url: "https://api.openregister.de/v1/autocomplete/company?query=Siemens%20Aktiengesellschaft",
       options: {
-        headers: { Authorization: `Bearer ${process.env.OPENREGISTER_API_KEY}` },
+        headers: {
+          Authorization: `Bearer ${process.env.OPENREGISTER_API_KEY}`,
+        },
       },
     },
-    (payload) => ({ matches: Array.isArray(payload.results) ? payload.results.length : 0 }),
+    (payload) => ({
+      matches: Array.isArray(payload.results) ? payload.results.length : 0,
+    }),
   ),
 );
 
@@ -95,10 +114,16 @@ results.push(
     {
       url: "https://api.apollo.io/api/v1/organizations/enrich?domain=siemens.com&name=Siemens",
       options: {
-        headers: { accept: "application/json", "x-api-key": process.env.APOLLO_API_KEY },
+        headers: {
+          accept: "application/json",
+          "x-api-key": process.env.APOLLO_API_KEY,
+        },
       },
     },
-    (payload) => ({ matched: Boolean(payload.organization?.id), name: payload.organization?.name ?? null }),
+    (payload) => ({
+      matched: Boolean(payload.organization?.id),
+      name: payload.organization?.name ?? null,
+    }),
   ),
 );
 
@@ -123,7 +148,9 @@ results.push(
         }),
       },
     },
-    (payload) => ({ results: Array.isArray(payload.results) ? payload.results.length : 0 }),
+    (payload) => ({
+      results: Array.isArray(payload.results) ? payload.results.length : 0,
+    }),
   ),
 );
 
@@ -156,5 +183,7 @@ results.push(
 );
 
 const passed = results.filter((result) => result.ok).length;
-console.log(JSON.stringify({ passed, total: results.length, results }, null, 2));
+console.log(
+  JSON.stringify({ passed, total: results.length, results }, null, 2),
+);
 if (passed !== results.length) process.exitCode = 1;

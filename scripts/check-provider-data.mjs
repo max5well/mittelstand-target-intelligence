@@ -27,16 +27,26 @@ async function requestJson(url, options, provider) {
     payload = { text: body.slice(0, 500) };
   }
   if (!response.ok) {
-    const message = payload?.error?.message ?? payload?.error ?? payload?.message ?? `HTTP ${response.status}`;
+    const message =
+      payload?.error?.message ??
+      payload?.error ??
+      payload?.message ??
+      `HTTP ${response.status}`;
     throw new Error(`${provider}: ${message}`);
   }
-  return { payload, durationMs: Date.now() - startedAt, httpStatus: response.status };
+  return {
+    payload,
+    durationMs: Date.now() - startedAt,
+    httpStatus: response.status,
+  };
 }
 
 const report = {};
 
 try {
-  const headers = { Authorization: `Bearer ${process.env.OPENREGISTER_API_KEY}` };
+  const headers = {
+    Authorization: `Bearer ${process.env.OPENREGISTER_API_KEY}`,
+  };
   const autocomplete = await requestJson(
     "https://api.openregister.de/v1/autocomplete/company?query=Siemens%20Aktiengesellschaft",
     { headers },
@@ -44,10 +54,13 @@ try {
   );
   const candidates = autocomplete.payload.results ?? [];
   const company =
-    candidates.find((candidate) => /siemens aktiengesellschaft/i.test(candidate.name ?? "")) ??
+    candidates.find((candidate) =>
+      /siemens aktiengesellschaft/i.test(candidate.name ?? ""),
+    ) ??
     candidates.find((candidate) => /siemens/i.test(candidate.name ?? "")) ??
     candidates[0];
-  if (!company?.company_id) throw new Error("OpenRegister returned no usable Siemens company ID");
+  if (!company?.company_id)
+    throw new Error("OpenRegister returned no usable Siemens company ID");
 
   const [details, financials, owners] = await Promise.all([
     requestJson(
@@ -72,12 +85,29 @@ try {
   report.openregister = {
     ok: true,
     companyMatched: Boolean(company.company_id),
-    identity: hasAny(detailKeys, ["name", "legal_form"]) && hasAny(detailKeys, ["register", "register_number"]),
+    identity:
+      hasAny(detailKeys, ["name", "legal_form"]) &&
+      hasAny(detailKeys, ["register", "register_number"]),
     status: detailKeys.has("status"),
-    locations: hasAny(detailKeys, ["address", "addresses", "city", "postal_code", "postcode"]),
-    management: hasAny(detailKeys, ["management", "managers", "representatives"]),
+    locations: hasAny(detailKeys, [
+      "address",
+      "addresses",
+      "city",
+      "postal_code",
+      "postcode",
+    ]),
+    management: hasAny(detailKeys, [
+      "management",
+      "managers",
+      "representatives",
+    ]),
     industryCodes: hasAny(detailKeys, ["industry_codes", "industry_code"]),
-    contactData: hasAny(detailKeys, ["contact", "website_url", "email", "phone"]),
+    contactData: hasAny(detailKeys, [
+      "contact",
+      "website_url",
+      "email",
+      "phone",
+    ]),
     revenue: financialKeys.has("revenue"),
     ebit: financialKeys.has("ebit"),
     equity: hasAny(financialKeys, ["equity", "shareholders_equity"]),
@@ -85,19 +115,36 @@ try {
     totalAssets: hasAny(financialKeys, ["total_assets", "assets"]),
     employees: financialKeys.has("employees"),
     owners: ownerKeys.has("owners"),
-    ownershipPercent: hasAny(ownerKeys, ["percentage_share", "ownership_percent"]),
+    ownershipPercent: hasAny(ownerKeys, [
+      "percentage_share",
+      "ownership_percent",
+    ]),
     ownershipSources: hasAny(ownerKeys, ["sources", "document_url"]),
-    directFamilyOwnedFlag: hasAny(ownerKeys, ["family_owned", "family_ownership"]),
-    directOwnerManagedFlag: hasAny(ownerKeys, ["owner_managed", "owner_managed_flag"]),
+    directFamilyOwnedFlag: hasAny(ownerKeys, [
+      "family_owned",
+      "family_ownership",
+    ]),
+    directOwnerManagedFlag: hasAny(ownerKeys, [
+      "owner_managed",
+      "owner_managed_flag",
+    ]),
   };
 } catch (error) {
-  report.openregister = { ok: false, error: error instanceof Error ? error.message : "Unknown error" };
+  report.openregister = {
+    ok: false,
+    error: error instanceof Error ? error.message : "Unknown error",
+  };
 }
 
 try {
   const apollo = await requestJson(
     "https://api.apollo.io/api/v1/organizations/enrich?domain=siemens.com&name=Siemens",
-    { headers: { accept: "application/json", "x-api-key": process.env.APOLLO_API_KEY } },
+    {
+      headers: {
+        accept: "application/json",
+        "x-api-key": process.env.APOLLO_API_KEY,
+      },
+    },
     "Apollo organization enrichment",
   );
   const organization = apollo.payload.organization ?? {};
@@ -106,14 +153,28 @@ try {
     ok: true,
     organizationMatched: Boolean(organization.id),
     domain: hasAny(keys, ["primary_domain", "domain", "website_url"]),
-    employeeEstimate: hasAny(keys, ["estimated_num_employees", "employee_count"]),
-    revenueEstimate: hasAny(keys, ["estimated_annual_revenue", "annual_revenue"]),
+    employeeEstimate: hasAny(keys, [
+      "estimated_num_employees",
+      "employee_count",
+    ]),
+    revenueEstimate: hasAny(keys, [
+      "estimated_annual_revenue",
+      "annual_revenue",
+    ]),
     industry: hasAny(keys, ["industry", "industries"]),
     location: hasAny(keys, ["country", "city", "state", "street_address"]),
-    corporateHierarchy: hasAny(keys, ["owned_by_organization", "owned_by_chain", "ultimate_parent_organization", "suborganizations"]),
+    corporateHierarchy: hasAny(keys, [
+      "owned_by_organization",
+      "owned_by_chain",
+      "ultimate_parent_organization",
+      "suborganizations",
+    ]),
   };
 } catch (error) {
-  report.apollo = { ok: false, error: error instanceof Error ? error.message : "Unknown error" };
+  report.apollo = {
+    ok: false,
+    error: error instanceof Error ? error.message : "Unknown error",
+  };
 }
 
 try {
@@ -145,7 +206,10 @@ try {
     relevanceScores: keys.has("score"),
   };
 } catch (error) {
-  report.tavily = { ok: false, error: error instanceof Error ? error.message : "Unknown error" };
+  report.tavily = {
+    ok: false,
+    error: error instanceof Error ? error.message : "Unknown error",
+  };
 }
 
 try {
@@ -176,7 +240,10 @@ try {
     statusCode: data.metadata?.statusCode ?? null,
   };
 } catch (error) {
-  report.firecrawl = { ok: false, error: error instanceof Error ? error.message : "Unknown error" };
+  report.firecrawl = {
+    ok: false,
+    error: error instanceof Error ? error.message : "Unknown error",
+  };
 }
 
 const passed = Object.values(report).filter((result) => result.ok).length;

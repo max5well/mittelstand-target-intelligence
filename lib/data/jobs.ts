@@ -60,3 +60,39 @@ export async function listJobs(
     };
   });
 }
+
+export async function getProviderHealth(workspaceId: string) {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("provider_usage_events")
+    .select("provider,http_status,occurred_at")
+    .eq("workspace_id", workspaceId)
+    .order("occurred_at", { ascending: false })
+    .limit(100);
+  if (error)
+    throw new Error(`Unable to load provider health: ${error.message}`);
+  const health: Record<
+    string,
+    {
+      state: "healthy" | "credit_exhausted" | "degraded" | "unknown";
+      httpStatus: number | null;
+    }
+  > = {};
+  for (const event of data ?? []) {
+    if (health[event.provider]) continue;
+    health[event.provider] = {
+      state:
+        event.http_status === 402
+          ? "credit_exhausted"
+          : event.http_status &&
+              event.http_status >= 200 &&
+              event.http_status < 300
+            ? "healthy"
+            : event.http_status
+              ? "degraded"
+              : "unknown",
+      httpStatus: event.http_status,
+    };
+  }
+  return health;
+}

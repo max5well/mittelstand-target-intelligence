@@ -9,10 +9,12 @@ import {
   externalProviderStages,
   runExternalProviderEnrichment,
 } from "@/lib/enrichment/external-providers";
+import { reportApiError } from "@/lib/api-errors";
+
+export const maxDuration = 60;
 
 const RequestSchema = z.object({
   stage: z.union([z.enum(openRegisterStages), z.enum(externalProviderStages)]),
-  force: z.boolean().default(false),
 });
 
 export async function POST(
@@ -39,13 +41,11 @@ export async function POST(
           workspaceId: authorization.workspaceId,
           companyId: id,
           stage: input.stage as (typeof openRegisterStages)[number],
-          force: input.force,
         })
       : await runExternalProviderEnrichment({
           workspaceId: authorization.workspaceId,
           companyId: id,
           stage: input.stage as (typeof externalProviderStages)[number],
-          force: input.force,
         });
     return NextResponse.json(result);
   } catch (error) {
@@ -55,12 +55,11 @@ export async function POST(
         { status: 400 },
       );
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Anreicherung fehlgeschlagen.",
-      },
+      await reportApiError(
+        error,
+        { route: "company-enrichment" },
+        "Die Anreicherung ist fehlgeschlagen. Bitte später erneut versuchen.",
+      ),
       { status: 502 },
     );
   }

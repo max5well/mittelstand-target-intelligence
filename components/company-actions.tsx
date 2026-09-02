@@ -2,16 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AlertCircle, CheckCircle2, RefreshCw, X } from "lucide-react";
 import {
-  AlertCircle,
-  CheckCircle2,
-  FileSearch,
-  FileText,
-  Globe2,
-  RefreshCw,
-  Users,
-  X,
-} from "lucide-react";
+  ProviderLogo,
+  providerNames,
+  type ProviderId,
+} from "@/components/provider-logo";
 
 type Stage =
   | "website_discovery"
@@ -29,24 +25,22 @@ type PreviousRun = {
 };
 type WebsiteToast = {
   kind: "success" | "not-found";
-  message: string;
 };
 
 const actions: Array<{
   stage: Stage;
-  provider: "openregister" | "apollo" | "firecrawl" | "tavily";
+  provider: ProviderId;
   label: string;
   description: string;
-  icon: typeof RefreshCw;
   credits: string;
-  requiredProviders?: Array<"openregister" | "apollo" | "firecrawl" | "tavily">;
+  displayProviders?: ProviderId[];
+  requiredProviders?: ProviderId[];
 }> = [
   {
     stage: "details",
     provider: "openregister",
     label: "Profil aktualisieren",
     description: "Adresse, Branche, Unternehmensgegenstand und Management",
-    icon: RefreshCw,
     credits: "10 Cr.",
   },
   {
@@ -55,7 +49,6 @@ const actions: Array<{
     label: "Finanzdaten abrufen",
     description:
       "Gemeldete Perioden; N/V, wenn OpenRegister keine Daten liefert",
-    icon: FileText,
     credits: "10 Cr.",
   },
   {
@@ -63,7 +56,6 @@ const actions: Array<{
     provider: "openregister",
     label: "Eigentümer abrufen",
     description: "Gesellschafter und Beteiligungsquoten",
-    icon: Users,
     credits: "10 Cr.",
   },
   {
@@ -72,8 +64,8 @@ const actions: Array<{
     label: "Website finden & verifizieren",
     description:
       "Tavily zuerst, Firecrawl als Fallback; Abgleich mit mehreren Profildaten",
-    icon: Globe2,
-    credits: "ca. 2–12 Cr.",
+    credits: "ca. 2–14 Cr.",
+    displayProviders: ["tavily", "firecrawl", "openregister"],
   },
   {
     stage: "apollo_organization",
@@ -81,7 +73,6 @@ const actions: Array<{
     label: "Mit Apollo anreichern",
     description:
       "Geschätzte Beschäftigtenzahl, Umsatz und Unternehmensabgleich",
-    icon: Users,
     credits: "1 Cr.",
   },
   {
@@ -89,7 +80,6 @@ const actions: Array<{
     provider: "firecrawl",
     label: "Unternehmenswebsite analysieren",
     description: "Inhalte der offiziellen Website als Quellenbeleg speichern",
-    icon: Globe2,
     credits: "ca. 1–5 Cr.",
   },
   {
@@ -97,25 +87,31 @@ const actions: Array<{
     provider: "tavily",
     label: "Web & Nachrichten recherchieren",
     description: "Externe Quellen, Titel, Auszüge und URLs",
-    icon: FileSearch,
     credits: "2 Cr.",
   },
 ];
 
 export function CompanyActions({
   companyId,
+  workspaceId,
   previousRuns,
   availableProviders,
+  exhaustedProviders,
   hasWebsite,
 }: {
   companyId: string;
+  workspaceId: string;
   previousRuns: PreviousRun[];
   availableProviders: string[];
+  exhaustedProviders: string[];
   hasWebsite: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<Stage | "all" | null>(null);
   const [message, setMessage] = useState("");
+  const [completedStages, setCompletedStages] = useState<Set<Stage>>(
+    () => new Set(),
+  );
   const [websiteToast, setWebsiteToast] = useState<WebsiteToast | null>(null);
   useEffect(() => {
     if (!websiteToast) return;
@@ -137,11 +133,14 @@ export function CompanyActions({
       ),
   );
 
-  async function run(stage: Stage, force: boolean) {
+  async function run(stage: Stage) {
     const response = await fetch(`/api/companies/${companyId}/enrich`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stage, force }),
+      headers: {
+        "Content-Type": "application/json",
+        "x-workspace-id": workspaceId,
+      },
+      body: JSON.stringify({ stage }),
     });
     const result = (await response.json()) as {
       error?: string;
@@ -155,27 +154,35 @@ export function CompanyActions({
   }
 
   async function runOne(stage: Stage) {
+    const action = actions.find((candidate) => candidate.stage === stage);
+    const key = `${action?.provider ?? "openregister"}:${stage}`;
+    if (latest.has(key) || completedStages.has(stage)) return;
     setBusy(stage);
-    setMessage("");
+    setMessage(
+      stage === "website_discovery"
+        ? "Website-Suche gestartet. Tavily sucht nach der offiziellen Website und Firecrawl prüft sie bei Bedarf."
+        : `${action?.label ?? stage} wurde gestartet…`,
+    );
     if (stage === "website_discovery") setWebsiteToast(null);
     try {
-      const action = actions.find((candidate) => candidate.stage === stage);
-      const key = `${action?.provider ?? "openregister"}:${stage}`;
-      const result = await run(stage, latest.has(key));
+      const result = await run(stage);
       if (stage === "website_discovery") {
         const found = result.available !== false;
-        setWebsiteToast({
-          kind: found ? "success" : "not-found",
-          message: found ? "Website successfully added" : "Website not found",
-        });
+        setWebsiteToast({ kind: found ? "success" : "not-found" });
+        setMessage(
+          found
+            ? "Website gefunden und verifiziert. Sie wurde dem Unternehmensprofil hinzugefügt."
+            : "Suche abgeschlossen. Es konnte keine ausreichend verifizierte Unternehmenswebsite gefunden werden.",
+        );
       }
-      setMessage(
-        stage === "website_discovery"
-          ? ""
-          : result.available === false
+      if (stage !== "website_discovery") {
+        setMessage(
+          result.available === false
             ? `${action?.label ?? stage} abgeschlossen, aber der Anbieter hat keine passenden Daten geliefert.`
             : `${action?.label ?? stage} abgeschlossen. Die Ergebnisse wurden unten gespeichert.`,
-      );
+        );
+      }
+      setCompletedStages((current) => new Set(current).add(stage));
       router.refresh();
     } catch (error) {
       setMessage(
@@ -189,16 +196,20 @@ export function CompanyActions({
   }
 
   async function runAll() {
+    const remaining = actions.filter(
+      (action) =>
+        action.provider === "openregister" &&
+        !latest.has(`${action.provider}:${action.stage}`) &&
+        !completedStages.has(action.stage),
+    );
+    if (!remaining.length) return;
     setBusy("all");
     setMessage("Vollständige OpenRegister-Anreicherung läuft…");
     try {
-      for (const action of actions.filter(
-        (candidate) => candidate.provider === "openregister",
-      ))
-        await run(
-          action.stage,
-          latest.has(`${action.provider}:${action.stage}`),
-        );
+      for (const action of remaining) {
+        await run(action.stage);
+        setCompletedStages((current) => new Set(current).add(action.stage));
+      }
       setMessage("Vollständige OpenRegister-Anreicherung abgeschlossen.");
       router.refresh();
     } catch (error) {
@@ -212,8 +223,30 @@ export function CompanyActions({
     }
   }
 
+  const remainingOpenRegisterActions = actions.filter(
+    (action) =>
+      action.provider === "openregister" &&
+      !latest.has(`${action.provider}:${action.stage}`) &&
+      !completedStages.has(action.stage),
+  ).length;
+  const allOpenRegisterActionsCompleted = remainingOpenRegisterActions === 0;
+
   return (
     <div className="mt-4 space-y-2">
+      {exhaustedProviders.length ? (
+        <p
+          role="alert"
+          className="rounded-lg border border-[#e3b49e] bg-[#fff1eb] p-3 text-sm text-[#8a3f26]"
+        >
+          Provider-Guthaben erschöpft:{" "}
+          {exhaustedProviders
+            .map(
+              (provider) => providerNames[provider as ProviderId] ?? provider,
+            )
+            .join(", ")}
+          . Aktionen bleiben für einen Verbindungstest verfügbar.
+        </p>
+      ) : null}
       {websiteToast ? (
         <div
           role={websiteToast.kind === "success" ? "status" : "alert"}
@@ -231,12 +264,14 @@ export function CompanyActions({
           )}
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-semibold">
-              {websiteToast.message}
+              {websiteToast.kind === "success"
+                ? "Website gefunden"
+                : "Keine Website gefunden"}
             </span>
             <span className="mt-1 block text-xs leading-5 opacity-80">
               {websiteToast.kind === "success"
-                ? "The verified website is now visible in the company profile and Apollo is available."
-                : "No sufficiently verified company website could be identified."}
+                ? "Die verifizierte Website ist jetzt im Unternehmensprofil sichtbar."
+                : "Es konnte keine ausreichend verifizierte Unternehmenswebsite ermittelt werden."}
             </span>
           </span>
           <button
@@ -250,44 +285,101 @@ export function CompanyActions({
         </div>
       ) : null}
       {visibleActions.map(
-        ({ stage, provider, label, description, icon: Icon, credits }) => {
+        ({
+          stage,
+          provider,
+          label,
+          description,
+          credits,
+          displayProviders,
+        }) => {
           const previous = latest.get(`${provider}:${stage}`);
+          const completed = Boolean(previous) || completedStages.has(stage);
+          const isRunning = busy === stage;
+          const shownProviders = displayProviders ?? [provider];
           const needsWebsite =
             (provider === "apollo" || provider === "firecrawl") && !hasWebsite;
           return (
             <button
               key={stage}
               type="button"
-              disabled={busy !== null || needsWebsite}
+              disabled={busy !== null || needsWebsite || completed}
               onClick={() => runOne(stage)}
-              className="flex w-full items-start gap-3 rounded-lg border border-[#d8d5cc] bg-white p-3 text-left transition hover:border-[#9fc9bc] disabled:opacity-55"
+              aria-busy={isRunning}
+              className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left transition ${
+                isRunning
+                  ? "cursor-wait border-[#6db69f] bg-[#eef8f4] shadow-[0_0_0_2px_rgba(19,116,95,0.08)]"
+                  : completed
+                    ? "cursor-not-allowed border-[#dddcd7] bg-[#efefec] text-[#77807c]"
+                    : "border-[#d8d5cc] bg-white hover:border-[#9fc9bc]"
+              } disabled:hover:border-[#dddcd7]`}
             >
-              <Icon
-                size={16}
-                className={
-                  busy === stage
-                    ? "mt-0.5 animate-spin text-[#13745f]"
-                    : "mt-0.5 text-[#13745f]"
-                }
-              />
+              <span className="relative flex shrink-0 -space-x-2 py-1">
+                {shownProviders.map((shownProvider) => (
+                  <ProviderLogo
+                    key={shownProvider}
+                    provider={shownProvider}
+                    muted={completed}
+                    size={shownProviders.length > 1 ? "small" : "default"}
+                  />
+                ))}
+                {busy === stage ? (
+                  <span className="absolute inset-0 grid place-items-center rounded-lg bg-white/80">
+                    <RefreshCw
+                      aria-label="Aktion läuft"
+                      size={17}
+                      className="animate-spin text-[#13745f]"
+                    />
+                  </span>
+                ) : null}
+              </span>
               <span className="min-w-0 flex-1">
-                <span className="block text-sm font-semibold">
-                  {previous ? `${label} erneut ausführen` : label}
+                <span
+                  className={`block text-[10px] font-bold uppercase tracking-[.11em] ${completed ? "text-[#8a928e]" : "text-[#13745f]"}`}
+                >
+                  {shownProviders
+                    .map((shownProvider) => providerNames[shownProvider])
+                    .join(" · ")}
                 </span>
-                <span className="mt-0.5 block text-xs leading-5 text-[#75807c]">
-                  {description}
+                <span className="mt-0.5 block text-sm font-semibold">
+                  {isRunning
+                    ? stage === "website_discovery"
+                      ? "Website-Suche läuft…"
+                      : `${label} läuft…`
+                    : label}
                 </span>
+                {isRunning ? (
+                  <span
+                    role="status"
+                    aria-live="polite"
+                    className="mt-1.5 flex items-start gap-1.5 text-xs font-medium leading-5 text-[#276b5b]"
+                  >
+                    <RefreshCw
+                      aria-hidden="true"
+                      size={12}
+                      className="mt-1 shrink-0 animate-spin"
+                    />
+                    {stage === "website_discovery"
+                      ? "Tavily sucht und verifiziert Treffer. Das kann bis zu einer Minute dauern."
+                      : "Die Anfrage wurde gestartet. Ergebnisse werden nach Abschluss geladen."}
+                  </span>
+                ) : (
+                  <span className="mt-0.5 block text-xs leading-5 text-[#75807c]">
+                    {description}
+                  </span>
+                )}
                 {needsWebsite ? (
                   <span className="mt-1 block text-xs font-medium text-[#8b5a2b]">
                     Nicht verfügbar, bis eine verifizierte Website gespeichert
                     ist
                   </span>
                 ) : null}
-                {previous ? (
-                  <span className="mt-1 flex items-center gap-1 text-xs font-medium text-[#31735f]">
-                    <CheckCircle2 size={11} /> Letzte Ausführung{" "}
-                    {formatRunDate(previous.completedAt)} ·{" "}
-                    {previous.available ? "Daten geliefert" : "nicht verfügbar"}
+                {completed ? (
+                  <span className="mt-1 flex items-center gap-1 text-xs font-medium text-[#66716d]">
+                    <CheckCircle2 size={11} /> Abgeschlossen
+                    {previous
+                      ? ` ${formatRunDate(previous.completedAt)} · ${previous.available ? "Daten geliefert" : "nicht verfügbar"}`
+                      : " · Ergebnisse werden geladen"}
                   </span>
                 ) : null}
               </span>
@@ -301,15 +393,17 @@ export function CompanyActions({
       {availableProviders.includes("openregister") ? (
         <button
           type="button"
-          disabled={busy !== null}
+          disabled={busy !== null || allOpenRegisterActionsCompleted}
           onClick={runAll}
-          className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#15352e] px-4 text-sm font-semibold text-white disabled:opacity-55"
+          className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#15352e] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-[#d8d9d5] disabled:text-[#737b77]"
         >
           <RefreshCw
             size={14}
             className={busy === "all" ? "animate-spin" : ""}
           />
-          Vollständige Anreicherung · 30 Credits
+          {allOpenRegisterActionsCompleted
+            ? "OpenRegister-Anreicherung abgeschlossen"
+            : `Verbleibende OpenRegister-Aktionen · ${remainingOpenRegisterActions * 10} Credits`}
         </button>
       ) : null}
       {message ? (

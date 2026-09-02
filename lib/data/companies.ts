@@ -9,6 +9,29 @@ import type { Company, OwnershipCategory, PipelineStatus } from "@/lib/types";
 import { getWz2025IndustryName } from "@/lib/wz2025";
 
 type Row = Record<string, unknown>;
+const DATABASE_PAGE_SIZE = 500;
+
+type PageResult<T> = PromiseLike<{
+  data: T[] | null;
+  error: { message: string } | null;
+}>;
+
+export async function fetchAllRows<T>(
+  queryPage: (from: number, to: number) => PageResult<T>,
+  label: string,
+) {
+  const rows: T[] = [];
+  for (let from = 0; ; from += DATABASE_PAGE_SIZE) {
+    const { data, error } = await queryPage(
+      from,
+      from + DATABASE_PAGE_SIZE - 1,
+    );
+    if (error) throw new Error(`Unable to load ${label}: ${error.message}`);
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < DATABASE_PAGE_SIZE) return rows;
+  }
+}
 
 export async function listCompanies(
   workspaceId: string,
@@ -22,19 +45,15 @@ export async function listCompanies(
   )
     return [];
   const supabase = createAdminClient();
-  let companiesQuery = supabase
-    .from("companies")
-    .select("*")
-    .eq("workspace_id", workspaceId);
-  if (!options.includeArchived) {
-    companiesQuery = companiesQuery.neq("status", "archived");
-  }
-  const { data: companyRows, error } = await companiesQuery.order(
-    "updated_at",
-    { ascending: false },
-  );
-  if (error) throw new Error(`Unable to load companies: ${error.message}`);
-  if (!companyRows?.length) return [];
+  const companyRows = await fetchAllRows((from, to) => {
+    let query = supabase
+      .from("companies")
+      .select("*")
+      .eq("workspace_id", workspaceId);
+    if (!options.includeArchived) query = query.neq("status", "archived");
+    return query.order("updated_at", { ascending: false }).range(from, to);
+  }, "companies");
+  if (!companyRows.length) return [];
 
   const ids = companyRows.map((row) => row.id);
   const [
@@ -48,52 +67,97 @@ export async function listCompanies(
     favorites,
     apollo,
   ] = await Promise.all([
-    supabase
-      .from("company_locations")
-      .select("*")
-      .in("company_id", ids)
-      .order("retrieved_at", { ascending: false }),
-    supabase
-      .from("company_financial_periods")
-      .select("*")
-      .in("company_id", ids)
-      .order("fiscal_period_end", { ascending: false }),
-    supabase
-      .from("company_ownership_classifications")
-      .select("*")
-      .in("company_id", ids)
-      .eq("is_current", true),
-    supabase
-      .from("company_owners")
-      .select("*")
-      .in("company_id", ids)
-      .order("ownership_percent", { ascending: false }),
-    supabase
-      .from("company_management")
-      .select("*")
-      .in("company_id", ids)
-      .is("ended_on", null)
-      .order("retrieved_at", { ascending: false }),
-    supabase
-      .from("company_scores")
-      .select("*")
-      .in("company_id", ids)
-      .order("calculated_at", { ascending: false }),
-    supabase
-      .from("geocoding_results")
-      .select("*")
-      .in("company_id", ids)
-      .order("retrieved_at", { ascending: false }),
-    supabase
-      .from("favorites")
-      .select("company_id")
-      .eq("workspace_id", workspaceId)
-      .eq("user_id", userId),
-    supabase
-      .from("apollo_organizations")
-      .select("*")
-      .in("company_id", ids)
-      .order("retrieved_at", { ascending: false }),
+    fetchAllRows(
+      (from, to) =>
+        supabase
+          .from("company_locations")
+          .select("*")
+          .in("company_id", ids)
+          .order("retrieved_at", { ascending: false })
+          .range(from, to),
+      "company locations",
+    ),
+    fetchAllRows(
+      (from, to) =>
+        supabase
+          .from("company_financial_periods")
+          .select("*")
+          .in("company_id", ids)
+          .order("fiscal_period_end", { ascending: false })
+          .range(from, to),
+      "company financial periods",
+    ),
+    fetchAllRows(
+      (from, to) =>
+        supabase
+          .from("company_ownership_classifications")
+          .select("*")
+          .in("company_id", ids)
+          .eq("is_current", true)
+          .range(from, to),
+      "ownership classifications",
+    ),
+    fetchAllRows(
+      (from, to) =>
+        supabase
+          .from("company_owners")
+          .select("*")
+          .in("company_id", ids)
+          .order("ownership_percent", { ascending: false })
+          .range(from, to),
+      "company owners",
+    ),
+    fetchAllRows(
+      (from, to) =>
+        supabase
+          .from("company_management")
+          .select("*")
+          .in("company_id", ids)
+          .is("ended_on", null)
+          .order("retrieved_at", { ascending: false })
+          .range(from, to),
+      "company management",
+    ),
+    fetchAllRows(
+      (from, to) =>
+        supabase
+          .from("company_scores")
+          .select("*")
+          .in("company_id", ids)
+          .order("calculated_at", { ascending: false })
+          .range(from, to),
+      "company scores",
+    ),
+    fetchAllRows(
+      (from, to) =>
+        supabase
+          .from("geocoding_results")
+          .select("*")
+          .in("company_id", ids)
+          .order("retrieved_at", { ascending: false })
+          .range(from, to),
+      "geocoding results",
+    ),
+    fetchAllRows(
+      (from, to) =>
+        supabase
+          .from("favorites")
+          .select("company_id")
+          .eq("workspace_id", workspaceId)
+          .eq("user_id", userId)
+          .range(from, to),
+      "favorites",
+    ),
+    fetchAllRows(
+      (from, to) =>
+        supabase
+          .from("apollo_organizations")
+          .select("*")
+          .in("company_id", ids)
+          .order("retrieved_at", { ascending: false })
+          .range(from, to),
+      "Apollo organizations",
+    ),
   ]);
 
   const firstByCompany = (rows: Row[] | null) => {
@@ -104,15 +168,13 @@ export async function listCompanies(
     }
     return map;
   };
-  const locationByCompany = firstByCompany(locations.data as Row[] | null);
-  const financialByCompany = firstByCompany(financials.data as Row[] | null);
-  const ownershipByCompany = firstByCompany(ownership.data as Row[] | null);
-  const scoreByCompany = firstByCompany(scores.data as Row[] | null);
-  const geoByCompany = firstByCompany(geocoding.data as Row[] | null);
-  const apolloByCompany = firstByCompany(apollo.data as Row[] | null);
-  const favoriteIds = new Set(
-    (favorites.data ?? []).map((row) => row.company_id),
-  );
+  const locationByCompany = firstByCompany(locations as Row[]);
+  const financialByCompany = firstByCompany(financials as Row[]);
+  const ownershipByCompany = firstByCompany(ownership as Row[]);
+  const scoreByCompany = firstByCompany(scores as Row[]);
+  const geoByCompany = firstByCompany(geocoding as Row[]);
+  const apolloByCompany = firstByCompany(apollo as Row[]);
+  const favoriteIds = new Set(favorites.map((row) => row.company_id));
   const groupByCompany = (rows: Row[] | null) => {
     const map = new Map<string, Row[]>();
     for (const row of rows ?? []) {
@@ -121,8 +183,8 @@ export async function listCompanies(
     }
     return map;
   };
-  const ownersByCompany = groupByCompany(owners.data as Row[] | null);
-  const managementByCompany = groupByCompany(management.data as Row[] | null);
+  const ownersByCompany = groupByCompany(owners as Row[]);
+  const managementByCompany = groupByCompany(management as Row[]);
 
   return companyRows.map((row) => {
     const id = row.id as string;
@@ -194,6 +256,8 @@ export async function listCompanies(
           ? null
           : Number(financial.total_assets_cents),
       fiscalYear: fiscalPeriod,
+      financialRetrievedAt:
+        financial?.retrieved_at == null ? null : String(financial.retrieved_at),
       ownership: String(
         classification?.classification ?? "Unknown",
       ) as OwnershipCategory,
@@ -211,6 +275,10 @@ export async function listCompanies(
             ? null
             : Number(owner.ownership_percent),
       })),
+      ownershipRetrievedAt:
+        companyOwners[0]?.retrieved_at == null
+          ? null
+          : String(companyOwners[0].retrieved_at),
       management: companyManagement.map((person) => ({
         name: String(person.full_name),
         role: String(person.role),

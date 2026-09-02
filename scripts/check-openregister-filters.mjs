@@ -27,7 +27,10 @@ const report = {
   resultCount: Array.isArray(payload.results) ? payload.results.length : 0,
   error: response.ok
     ? null
-    : payload?.error?.message ?? payload?.error ?? payload?.message ?? `HTTP ${response.status}`,
+    : (payload?.error?.message ??
+      payload?.error ??
+      payload?.message ??
+      `HTTP ${response.status}`),
 };
 
 console.log(JSON.stringify(report, null, 2));

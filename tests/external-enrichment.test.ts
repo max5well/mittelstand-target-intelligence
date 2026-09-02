@@ -200,8 +200,37 @@ describe("Firecrawl website discovery", () => {
     expect(JSON.parse(String(request.body))).toMatchObject({
       query: '"Wärmetechnik Leickel" Herne Website Impressum',
       country: "DE",
-      sources: ["web"],
-      scrapeOptions: { formats: ["markdown"] },
+      sources: [{ type: "web" }],
     });
+    expect(JSON.parse(String(request.body))).not.toHaveProperty(
+      "scrapeOptions",
+    );
+  });
+
+  it("accepts documented array-valued Firecrawl metadata", async () => {
+    vi.stubEnv("MOCK_PROVIDERS", "false");
+    vi.stubEnv("FIRECRAWL_API_KEY", "test-key");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json({
+          success: true,
+          data: {
+            markdown: "Unternehmensprofil",
+            metadata: {
+              sourceURL: "https://example.de",
+              title: ["Example GmbH", "Unternehmen"],
+            },
+          },
+          creditsUsed: 1,
+        }),
+      ),
+    );
+    await expect(
+      new FirecrawlProvider().research({
+        companyName: "Example GmbH",
+        verifiedDomain: "https://example.de",
+      }),
+    ).resolves.toEqual([expect.objectContaining({ title: "Example GmbH" })]);
   });
 });

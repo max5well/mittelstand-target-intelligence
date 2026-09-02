@@ -146,6 +146,8 @@ export const companies: Company[] = names.map((baseName, index) => {
     totalAssetsCents:
       revenueCents === null ? null : Math.round(revenueCents * 0.76),
     fiscalYear: revenueCents === null ? null : 2024 - (index % 3),
+    financialRetrievedAt:
+      revenueCents === null ? null : "2026-08-27T08:00:00.000Z",
     ownership,
     ownershipConfidence: ownership.includes("PE-backed") ? 0.72 : 0.88,
     ownershipMethod: ownership.includes("PE-backed")
@@ -164,9 +166,10 @@ export const companies: Company[] = names.map((baseName, index) => {
           ? "Schneider family"
           : `${baseName.split(" ")[0]} Beteiligungs GmbH`,
         type: ownership.includes("Family") ? "natural_person" : "legal_person",
-        percentage: 100,
+        percentage: 1,
       },
     ],
+    ownershipRetrievedAt: "2026-08-27T08:00:00.000Z",
     management: [{ name: "Anna Beispiel", role: "DIRECTOR" }],
     purpose: `Manufacturing and distribution in ${industry[1].toLocaleLowerCase("de")}.`,
     incorporationDate: "1998-01-01",

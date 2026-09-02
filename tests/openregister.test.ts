@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CompanySearchRequestSchema,
   OpenRegisterProvider,
@@ -7,6 +7,8 @@ import {
 describe("OpenRegister adapter", () => {
   afterEach(() => {
     delete process.env.MOCK_PROVIDERS;
+    delete process.env.OPENREGISTER_API_KEY;
+    vi.unstubAllGlobals();
   });
   it("validates AND-style documented filters and pagination", () => {
     const request = CompanySearchRequestSchema.parse({
@@ -39,5 +41,19 @@ describe("OpenRegister adapter", () => {
     expect(new Set(response.results.map((item) => item.company_id)).size).toBe(
       40,
     );
+  });
+
+  it("requests best-available ownership data", async () => {
+    process.env.MOCK_PROVIDERS = "false";
+    process.env.OPENREGISTER_API_KEY = "test-key";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(Response.json({ owners: [], best_available: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    await new OpenRegisterProvider().owners("company-1");
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
+      "/owners?best_available=true",
+    );
+    vi.unstubAllGlobals();
   });
 });

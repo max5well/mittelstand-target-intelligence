@@ -232,6 +232,18 @@ export function SettingsPanel({
                       label="Live-Anbietermodus"
                       value={integration.liveMode ? "Aktiviert" : "Deaktiviert"}
                     />
+                    <StatusRow
+                      label="Letzter Provider-Status"
+                      value={
+                        integration.operationalState === "credit_exhausted"
+                          ? "Guthaben erschöpft"
+                          : integration.operationalState === "healthy"
+                            ? "Erreichbar"
+                            : integration.operationalState === "degraded"
+                              ? `Fehler${integration.lastHttpStatus ? ` (HTTP ${integration.lastHttpStatus})` : ""}`
+                              : "Noch nicht geprüft"
+                      }
+                    />
                   </dl>
                   <a
                     href={integration.dashboardUrl}
@@ -295,16 +307,14 @@ function StatusRow({ label, value }: { label: string; value: string }) {
   );
 }
 function StatusBadge({ integration }: { integration: IntegrationStatus }) {
+  const exhausted = integration.operationalState === "credit_exhausted";
+  const ready = integration.usable && !exhausted;
   return (
     <span
-      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-semibold ${integration.usable ? "bg-[#e4f1ed] text-[#27705d]" : "bg-[#fff0df] text-[#8b5b22]"}`}
+      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-semibold ${ready ? "bg-[#e4f1ed] text-[#27705d]" : "bg-[#fff0df] text-[#8b5b22]"}`}
     >
-      {integration.usable ? (
-        <CheckCircle2 size={11} />
-      ) : (
-        <CircleAlert size={11} />
-      )}
-      {integration.usable ? "Bereit" : "Nicht bereit"}
+      {ready ? <CheckCircle2 size={11} /> : <CircleAlert size={11} />}
+      {exhausted ? "Guthaben erschöpft" : ready ? "Bereit" : "Nicht bereit"}
     </span>
   );
 }

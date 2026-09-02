@@ -25,7 +25,8 @@ const checks = [
         "x-api-key": process.env.APOLLO_API_KEY,
       },
     },
-    connected: (payload) => payload.healthy === true && payload.is_logged_in === true,
+    connected: (payload) =>
+      payload.healthy === true && payload.is_logged_in === true,
   },
   {
     provider: "Tavily",
@@ -50,7 +51,10 @@ for (const check of checks) {
       durationMs: Date.now() - startedAt,
       error: response.ok
         ? null
-        : payload?.error?.message ?? payload?.error ?? payload?.message ?? `HTTP ${response.status}`,
+        : (payload?.error?.message ??
+          payload?.error ??
+          payload?.message ??
+          `HTTP ${response.status}`),
     });
   } catch (error) {
     results.push({
@@ -64,5 +68,7 @@ for (const check of checks) {
 }
 
 const passed = results.filter((result) => result.connected).length;
-console.log(JSON.stringify({ passed, total: results.length, results }, null, 2));
+console.log(
+  JSON.stringify({ passed, total: results.length, results }, null, 2),
+);
 if (passed !== results.length) process.exitCode = 1;

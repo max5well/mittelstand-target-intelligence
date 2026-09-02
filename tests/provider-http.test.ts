@@ -1,8 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { fetchProvider } from "@/lib/integrations/http";
+import {
+  creditsForProviderOutcome,
+  fetchProvider,
+  PROVIDER_REQUEST_TIMEOUT_MS,
+  ProviderError,
+} from "@/lib/integrations/http";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
 
 describe("provider HTTP errors", () => {
   it("identifies the provider and explains HTTP 402", async () => {
@@ -24,5 +32,41 @@ describe("provider HTTP errors", () => {
       message:
         "Provider request to api.openregister.de failed with status 402. The provider account has no usable credits or billing access.",
     });
+  });
+
+  it("attaches the configured abort budget to every provider request", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    await fetchProvider(
+      "https://api.example.com/hung",
+      {},
+      z.object({ ok: z.boolean() }),
+      1,
+    );
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(request.signal).toBeInstanceOf(AbortSignal);
+    expect(PROVIDER_REQUEST_TIMEOUT_MS).toBe(15_000);
+  });
+});
+
+describe("provider credit attribution", () => {
+  it.each([
+    [402, 0],
+    [404, 10],
+    [429, 10],
+    [500, 10],
+  ])("maps HTTP %i to %i credits", (status, expected) => {
+    expect(
+      creditsForProviderOutcome(
+        10,
+        new ProviderError("provider failure", status),
+      ),
+    ).toBe(expected);
+  });
+
+  it("does not bill transport failures", () => {
+    expect(creditsForProviderOutcome(10, new TypeError("fetch failed"))).toBe(
+      0,
+    );
   });
 });

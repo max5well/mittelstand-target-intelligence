@@ -1,6 +1,6 @@
 import "server-only";
 import { z } from "zod";
-import { fetchProvider } from "./http";
+import { fetchProvider, type ProviderRequestMetrics } from "./http";
 
 export type WebSource = {
   provider: "firecrawl" | "tavily";
@@ -30,13 +30,17 @@ const FirecrawlSchema = z
         metadata: z
           .object({
             sourceURL: z.string().optional(),
-            title: z.string().optional(),
+            title: z.union([z.string(), z.array(z.string())]).optional(),
+            description: z.union([z.string(), z.array(z.string())]).optional(),
+            language: z.union([z.string(), z.array(z.string())]).optional(),
+            keywords: z.union([z.string(), z.array(z.string())]).optional(),
           })
           .passthrough()
           .optional(),
       })
       .passthrough()
       .optional(),
+    creditsUsed: z.number().optional(),
   })
   .passthrough();
 
@@ -65,6 +69,8 @@ const FirecrawlSearchSchema = z
 
 export class FirecrawlProvider implements WebResearchProvider {
   readonly name = "firecrawl";
+  lastRequestCount = 0;
+  lastCreditsUsed: number | null = null;
   isAvailable() {
     return (
       Boolean(process.env.FIRECRAWL_API_KEY) ||
@@ -87,6 +93,7 @@ export class FirecrawlProvider implements WebResearchProvider {
           retrievedAt: new Date().toISOString(),
         },
       ];
+    const metrics: ProviderRequestMetrics = { requestCount: 0 };
     const payload = await fetchProvider(
       "https://api.firecrawl.dev/v2/scrape",
       {
@@ -105,14 +112,18 @@ export class FirecrawlProvider implements WebResearchProvider {
         }),
       },
       FirecrawlSchema,
+      3,
+      metrics,
     );
+    this.lastRequestCount = metrics.requestCount;
+    this.lastCreditsUsed = payload.creditsUsed ?? null;
     const page = payload.data;
     return page
       ? [
           {
             provider: "firecrawl" as const,
             url: page.metadata?.sourceURL ?? input.verifiedDomain,
-            title: page.metadata?.title ?? null,
+            title: firstText(page.metadata?.title),
             content: page.markdown ?? "",
             publishedAt: null,
             score: null,
@@ -135,6 +146,7 @@ export class FirecrawlProvider implements WebResearchProvider {
           retrievedAt: new Date().toISOString(),
         },
       ];
+    const metrics: ProviderRequestMetrics = { requestCount: 0 };
     const payload = await fetchProvider(
       "https://api.firecrawl.dev/v2/search",
       {
@@ -146,18 +158,18 @@ export class FirecrawlProvider implements WebResearchProvider {
         body: JSON.stringify({
           query: buildCompanyWebsiteQuery(input.companyName, input.city),
           limit: 10,
-          sources: ["web"],
+          sources: [{ type: "web" }],
           location: input.city ? `${input.city}, Germany` : "Germany",
           country: "DE",
           ignoreInvalidURLs: true,
-          scrapeOptions: {
-            formats: ["markdown"],
-            onlyMainContent: true,
-          },
         }),
       },
       FirecrawlSearchSchema,
+      1,
+      metrics,
     );
+    this.lastRequestCount = metrics.requestCount;
+    this.lastCreditsUsed = payload.creditsUsed ?? null;
     const retrievedAt = new Date().toISOString();
     return payload.data.web.map((result) => ({
       provider: "firecrawl" as const,
@@ -187,6 +199,7 @@ const TavilySchema = z.object({
 });
 export class TavilyProvider implements WebResearchProvider {
   readonly name = "tavily";
+  lastRequestCount = 0;
   isAvailable() {
     return (
       Boolean(process.env.TAVILY_API_KEY) ||
@@ -211,6 +224,7 @@ export class TavilyProvider implements WebResearchProvider {
           retrievedAt: new Date().toISOString(),
         },
       ];
+    const metrics: ProviderRequestMetrics = { requestCount: 0 };
     const payload = await fetchProvider(
       "https://api.tavily.com/search",
       {
@@ -224,17 +238,22 @@ export class TavilyProvider implements WebResearchProvider {
             .filter(Boolean)
             .join(" "),
           search_depth: "advanced",
+          topic: "news",
           max_results: 10,
           include_raw_content: true,
         }),
       },
       TavilySchema,
+      3,
+      metrics,
     );
+    this.lastRequestCount = metrics.requestCount;
     return mapTavilyResults(payload.results);
   }
 
   async discoverOfficialWebsite(input: { companyName: string; city?: string }) {
     if (process.env.MOCK_PROVIDERS !== "false") return this.research(input);
+    const metrics: ProviderRequestMetrics = { requestCount: 0 };
     const payload = await fetchProvider(
       "https://api.tavily.com/search",
       {
@@ -253,9 +272,17 @@ export class TavilyProvider implements WebResearchProvider {
         }),
       },
       TavilySchema,
+      1,
+      metrics,
     );
+    this.lastRequestCount = metrics.requestCount;
     return mapTavilyResults(payload.results);
   }
+}
+
+function firstText(value: string | string[] | undefined) {
+  if (Array.isArray(value)) return value.find((item) => item.trim()) ?? null;
+  return value?.trim() || null;
 }
 
 export function buildCompanyWebsiteQuery(companyName: string, city?: string) {
