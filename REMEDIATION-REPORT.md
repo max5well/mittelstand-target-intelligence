@@ -9,12 +9,12 @@
 
 The code and database blockers identified by the audit have been remediated. Production authentication bypass variables were removed, the production database migration was applied, the app builds cleanly, 79 unit tests pass, the runtime RLS integration gate passes, and both repaired Playwright flows pass.
 
-Two account-owner actions remain open because they require either a purchase or access to a third-party console:
+Four account-owner action categories remain open because they require a purchase, a destination choice, or access to third-party consoles:
 
 1. Top up OpenRegister and Tavily, then run one deliberate paid smoke test (F-02).
-2. Set the branded Google OAuth consent-screen application name (F-19b).
-
-Monitoring code is active through structured Vercel logs. External alert delivery remains optional until `ERROR_WEBHOOK_URL` or a Vercel Log Drain is configured.
+2. In Supabase, confirm the hosted `before_user_created` hook and backup/PITR retention, then schedule the first restore drill.
+3. Set the branded Google OAuth consent-screen application name (F-19b).
+4. Choose and configure `ERROR_WEBHOOK_URL` or a Vercel Log Drain; structured logging is already active.
 
 ## Finding-by-finding completion ledger
 
@@ -52,6 +52,7 @@ Monitoring code is active through structured Vercel logs. External alert deliver
 - Financial, ownership, Apollo, and web-source retrieval dates are surfaced in the company profile through [`lib/data/companies.ts`](./lib/data/companies.ts) and the detail page.
 - Firecrawl’s provider-reported `creditsUsed` now takes precedence over hard-coded estimates.
 - Backup/restore, alerting, provider recovery, and GDPR export procedures are documented in [`docs/OPERATIONS.md`](./docs/OPERATIONS.md).
+- The local Supabase configuration and migration define the `before_user_created` hook target; hosted-dashboard confirmation remains explicitly listed below because it was not safely observable from the available API/CLI surfaces.
 
 ## Verification record
 
@@ -81,6 +82,8 @@ Monitoring code is active through structured Vercel logs. External alert deliver
 
 1. In OpenRegister and Tavily, purchase/assign sufficient credits.
 2. Run exactly one controlled company enrichment and confirm the provider-health badge changes from “Guthaben erschöpft” to “Erreichbar”.
-3. In Google Cloud Console, rename the OAuth consent-screen application to “Zielunternehmen”.
-4. Configure either `ERROR_WEBHOOK_URL` or a Vercel Log Drain and test one alert.
-5. Optionally start Docker Desktop and run `npm run test:rls` before future database-policy work; GitHub Actions already enforces the same runtime gate.
+3. In the hosted Supabase dashboard, confirm `before_user_created` targets `private.restrict_google_signup`.
+4. Confirm the hosted Supabase plan's backup/PITR retention and schedule the first isolated restore drill from [`docs/OPERATIONS.md`](./docs/OPERATIONS.md).
+5. In Google Cloud Console, rename the OAuth consent-screen application to “Zielunternehmen”.
+6. Configure either `ERROR_WEBHOOK_URL` or a Vercel Log Drain and test one alert.
+7. Optionally start Docker Desktop and run `npm run test:rls` before future database-policy work; GitHub Actions already enforces the same runtime gate.
