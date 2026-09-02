@@ -14,7 +14,8 @@ The application is a decision-support product, not a CRM and not an automated ou
 - Company detail experience with reported financial history, ownership versus classification, management, evidence-linked derived claims, activity, and cost-aware enrichment actions.
 - Germany map experience with cached fixture coordinates, visible geocode failures, filter modes, clusters/markers, and target previews. A commercial MapLibre tile/geocoder adapter can replace the fixture visualization.
 - Coverage-aware analytics, provider jobs/usage, retries, and missing-run health indicators.
-- Typed adapters for OpenRegister, Apollo, Firecrawl, Tavily, OpenAI Responses structured output, and commercial geocoding. Zod validates all external boundaries.
+- Typed adapters for OpenRegister, Apollo, Firecrawl, Tavily, OpenRouter structured output, and commercial geocoding. Zod validates all external boundaries.
+- A separate sale-opportunities workspace can import public German con|cess listings on demand after source authorization, with stable listing-ID deduplication, concise titles, source links, asking prices, and selling-agent attribution. Austrian listings are excluded.
 - An empty-by-default local database with persisted provider usage events and no fictional company records.
 
 ## Architecture
@@ -65,7 +66,10 @@ npx supabase db reset
 | `APOLLO_API_KEY`                       |       Optional | Organization and people actions hidden/disabled in live mode            |
 | `FIRECRAWL_API_KEY`                    |       Optional | First-party website analysis hidden/disabled in live mode               |
 | `TAVILY_API_KEY`                       |       Optional | External news research hidden/disabled in live mode                     |
-| `OPENAI_API_KEY` + `OPENAI_MODEL`      |       Optional | Evidence extraction uses fixtures; raw sources remain available         |
+| `OPENROUTER_API_KEY`                   |       Optional | Structured evidence review is skipped; accepted raw sources remain      |
+| `OPENROUTER_MODEL`                     |       Optional | Defaults to `z-ai/glm-5.3-flash`                                        |
+| `OPENROUTER_DAILY_TOKEN_LIMIT`         |       Optional | Deployment-wide UTC-day limit; defaults to 100,000 tokens               |
+| `CONCESS_IMPORT_ENABLED`               |   Legal review | Must remain `false` until the source authorizes automated reuse         |
 | `MAP_TILES_URL` + `MAP_PUBLIC_TOKEN`   |       Optional | Fixture geography remains visible; production tiles disabled            |
 | `GEOCODING_API_KEY`                    |       Optional | New addresses are not live-geocoded                                     |
 | `CRON_SECRET`                          |     Production | Cron route rejects every request                                        |
@@ -118,9 +122,11 @@ No public signup route exists. Viewers do not receive decrypted Apollo personal 
 - Current configured OpenRegister estimates are 10 credits each for advanced search, company details, financials, and owners. These values are editable because provider pricing can change.
 - The owner/succession filters may require an Enterprise OpenRegister plan. Detect capabilities before enabling them.
 - `realtime=true` is never the default. It is a separately confirmed refresh action.
-- Firecrawl stays on the verified company domain and is capped at 20 relevant pages. Tavily queries include company, domain, and city to reduce namesake errors.
+- Firecrawl stays on the verified company domain and is capped at 20 relevant pages. Tavily news queries use the core brand and city to reduce namesake errors while retaining publication dates.
 - AI output is derived, versioned, uses `store: false`, and is discarded when it lacks evidence URLs.
 - Paid jobs use unique idempotency keys; a duplicate click cannot create a second queued row for the same freshness bucket.
+- con|cess records are anonymous sale opportunities rather than verified legal entities. They are kept out of company, overview, map, analytics, and company CSV views; listing values remain attributed to con|cess and refresh only through the explicit sale-listing sync action. The action is disabled unless `CONCESS_IMPORT_ENABLED=true`, pages are fetched serially, and a published robots policy is enforced. That flag records an owner decision after written source permission; a missing robots file is not permission.
+- OpenRouter reviews are capped at 4,000 output tokens, use a 40-second request timeout, obey `OPENROUTER_DAILY_TOKEN_LIMIT`, and write token plus micro-dollar usage to `provider_usage_events` without mixing tokens into provider-credit totals.
 
 ## Deployment
 

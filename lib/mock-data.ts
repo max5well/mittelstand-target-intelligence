@@ -192,6 +192,7 @@ export const companies: Company[] = names.map((baseName, index) => {
     updatedAt: new Date(Date.UTC(2026, 7, 27 - (index % 45))).toISOString(),
     sourceType: "reported",
     fictional: true,
+    saleListing: null,
   };
 });
 

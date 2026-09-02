@@ -22,10 +22,11 @@ export async function fetchProvider<T extends z.ZodType>(
   schema: T,
   attempts = 3,
   metrics?: ProviderRequestMetrics,
+  timeoutMs = PROVIDER_REQUEST_TIMEOUT_MS,
 ): Promise<z.output<T>> {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (metrics) metrics.requestCount = attempt + 1;
-    const timeoutSignal = AbortSignal.timeout(PROVIDER_REQUEST_TIMEOUT_MS);
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
     const signal = init.signal
       ? AbortSignal.any([init.signal, timeoutSignal])
       : timeoutSignal;
@@ -79,21 +80,27 @@ export async function fetchProvider<T extends z.ZodType>(
 }
 
 /**
- * Provider 402 responses and requests that never received an HTTP response do
- * not consume provider credits. Other HTTP responses are conservatively
- * treated as billable, once per request attempt.
+ * Rate limits, server failures, provider 402 responses and requests that never
+ * received an HTTP response do not consume provider credits. Other HTTP
+ * outcomes are conservatively attributed at most once; retry count remains a
+ * separate telemetry field and must not multiply the charge.
  */
 export function creditsForProviderOutcome(
   estimatedCredits: number,
   error: unknown,
   requestCount = 1,
 ) {
-  if (error instanceof ProviderError && error.status === 402) return 0;
+  if (
+    error instanceof ProviderError &&
+    (error.status === 402 || error.status === 429 || error.status >= 500)
+  )
+    return 0;
   if (
     error instanceof DOMException &&
     (error.name === "TimeoutError" || error.name === "AbortError")
   )
     return 0;
   if (error instanceof TypeError) return 0;
-  return estimatedCredits * Math.max(1, requestCount);
+  void requestCount;
+  return estimatedCredits;
 }

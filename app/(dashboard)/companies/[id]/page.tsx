@@ -23,6 +23,7 @@ import {
   statusLabel,
 } from "@/lib/format";
 import { getIntegrationStatuses } from "@/lib/integrations/status";
+import { isOpenRegisterId } from "@/lib/openregister-id";
 
 export default async function CompanyDetailPage({
   params,
@@ -71,9 +72,11 @@ export default async function CompanyDetailPage({
           provider: job.provider,
           completedAt: job.completedAt,
           available: job.available !== false,
+          candidates: job.candidates,
+          rejected: job.rejected,
         });
       return latest;
-    }, new Map<string, { stage: "details" | "financials" | "owners" | "website_discovery" | "apollo_organization" | "firecrawl_website" | "tavily_research"; provider: string; completedAt: string | null; available: boolean }>()),
+    }, new Map<string, { stage: "details" | "financials" | "owners" | "website_discovery" | "apollo_organization" | "firecrawl_website" | "tavily_research"; provider: string; completedAt: string | null; available: boolean; candidates: number | null; rejected: number | null }>()),
   ).map(([, run]) => run);
 
   return (
@@ -97,13 +100,35 @@ export default async function CompanyDetailPage({
           </h1>
           <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-[#69736f]">
             <span>
-              {[company.address, company.postcode, company.city, company.state]
-                .filter((value) => value !== "N/A")
-                .join(", ") || "Standort N/V"}
+              {Array.from(
+                new Set(
+                  [
+                    company.address,
+                    company.postcode,
+                    company.city,
+                    company.state,
+                  ].filter((value) => value !== "N/A"),
+                ),
+              ).join(", ") || "Standort N/V"}
             </span>
             <span className="rounded-full bg-[#e6eee9] px-2.5 py-1 font-semibold text-[#41665c]">
               {statusLabel(company.status)}
             </span>
+            {company.saleListing ? (
+              <a
+                href={company.saleListing.sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-full bg-[#ffdf91] px-2.5 py-1 font-semibold text-[#714900] transition hover:bg-[#ffd36d]"
+              >
+                {company.saleListing.active ? "Zum Verkauf" : "Quelle"} ·{" "}
+                {company.saleListing.providerLabel}
+                {company.saleListing.askingPriceCents === null
+                  ? ""
+                  : ` · ${formatMoney(company.saleListing.askingPriceCents)}`}
+                <ExternalLink size={11} />
+              </a>
+            ) : null}
           </div>
           {company.website ? (
             <a
@@ -134,9 +159,11 @@ export default async function CompanyDetailPage({
           [
             "Umsatz",
             formatMoney(company.revenueCents),
-            company.fiscalYear
-              ? `Gemeldet · GJ ${company.fiscalYear}${formatRetrievedAt(company.financialRetrievedAt)}`
-              : "Nicht gemeldet",
+            company.saleListing
+              ? "Verkaufsangebot · aktuell"
+              : company.fiscalYear
+                ? `Gemeldet · GJ ${company.fiscalYear}${formatRetrievedAt(company.financialRetrievedAt)}`
+                : "Nicht gemeldet",
           ],
           [
             "EBITDA",
@@ -148,9 +175,11 @@ export default async function CompanyDetailPage({
           [
             "Beschäftigte",
             company.employees?.toLocaleString("de-DE") ?? "—",
-            company.employeeYear
-              ? `Gemeldet · ${company.employeeYear}${formatRetrievedAt(company.financialRetrievedAt)}`
-              : "Nicht gemeldet",
+            company.saleListing
+              ? "Verkaufsangebot · aktuell"
+              : company.employeeYear
+                ? `Gemeldet · ${company.employeeYear}${formatRetrievedAt(company.financialRetrievedAt)}`
+                : "Nicht gemeldet",
           ],
           [
             "Eigentümerstruktur",
@@ -300,27 +329,30 @@ export default async function CompanyDetailPage({
                     key={source.id}
                     className="rounded-lg border border-[#e0ddd5] bg-white p-4"
                   >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-xs font-semibold uppercase tracking-[.08em] text-[#75807c]">
-                        {source.provider} · Quellenbeleg
-                        {formatRetrievedAt(source.retrieved_at)}
-                      </p>
-                      <a
-                        href={source.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-[#087b62]"
-                      >
-                        Quelle öffnen <ExternalLink size={11} />
-                      </a>
-                    </div>
-                    <p className="mt-2 text-sm font-semibold">
-                      {source.title ?? source.url}
+                    <p className="text-xs font-semibold uppercase tracking-[.08em] text-[#75807c]">
+                      {source.provider} · Quellenbeleg
+                      {formatRetrievedAt(source.retrieved_at)}
                     </p>
-                    <p className="mt-2 line-clamp-3 text-sm leading-6 text-[#68736e]">
-                      {source.supporting_excerpt ||
-                        "Kein Textauszug geliefert."}
-                    </p>
+                    <a
+                      href={source.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="group mt-3 flex items-start justify-between gap-4 rounded-md border border-[#e6e3dc] bg-[#faf9f6] px-4 py-3 transition-colors hover:border-[#9dc9bc] hover:bg-[#f4faf7] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#087b62] focus-visible:ring-offset-2"
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold text-[#202522] group-hover:text-[#087b62]">
+                          {source.title ?? "Webquelle öffnen"}
+                        </span>
+                        <span className="mt-1 block break-all text-xs leading-5 text-[#68736e] underline decoration-[#b9c3bf] underline-offset-2 group-hover:decoration-[#087b62]">
+                          {source.url}
+                        </span>
+                      </span>
+                      <ExternalLink
+                        aria-hidden="true"
+                        className="mt-0.5 shrink-0 text-[#087b62]"
+                        size={15}
+                      />
+                    </a>
                   </article>
                 ))}
               </div>
@@ -351,7 +383,13 @@ export default async function CompanyDetailPage({
               <ShieldCheck size={17} className="text-[#13745f]" />
               <h2 className="text-base font-semibold">Verfügbare Aktionen</h2>
             </div>
-            {readyProviders.length === 0 ? (
+            {company.saleListing ? (
+              <p className="mt-3 text-sm leading-6 text-[#68736e]">
+                Dies ist ein anonymes Verkaufsangebot. Anbieteranreicherungen
+                bleiben deaktiviert, bis das Angebot einer verifizierten
+                deutschen Registergesellschaft zugeordnet wurde.
+              </p>
+            ) : readyProviders.length === 0 ? (
               <>
                 <p className="mt-3 text-sm leading-6 text-[#68736e]">
                   Es werden keine Anbieteraktionen angezeigt, weil keine Quelle
@@ -382,6 +420,9 @@ export default async function CompanyDetailPage({
                     .filter(([, health]) => health.state === "credit_exhausted")
                     .map(([provider]) => provider)}
                   hasWebsite={Boolean(company.website)}
+                  hasOpenRegisterId={isOpenRegisterId(
+                    company.openregisterCompanyId,
+                  )}
                 />
               </>
             )}

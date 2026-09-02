@@ -2,6 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/db/admin";
+import { recoverConflictingJobLease } from "@/lib/enrichment/job-leases";
 import { geocodeRegisteredAddress } from "@/lib/geocoding/nominatim";
 import { OpenRegisterProvider } from "@/lib/integrations/openregister";
 import {
@@ -9,6 +10,8 @@ import {
   ProviderError,
   type ProviderRequestMetrics,
 } from "@/lib/integrations/http";
+import { isOpenRegisterId } from "@/lib/openregister-id";
+import { resolvePublicHttpUrl } from "@/lib/url-safety-server";
 
 export const openRegisterStages = ["details", "financials", "owners"] as const;
 export type OpenRegisterStage = (typeof openRegisterStages)[number];
@@ -47,8 +50,10 @@ export async function runOpenRegisterEnrichment(input: {
     .single();
   if (companyError || !company)
     throw new Error(companyError?.message ?? "Company not found");
-  if (!company.openregister_company_id)
-    throw new Error("This target has no OpenRegister company ID");
+  if (!isOpenRegisterId(company.openregister_company_id))
+    throw new Error(
+      "This target has no provider-issued OpenRegister company ID",
+    );
 
   if (!input.force) {
     const { data: previous } = await supabase
@@ -73,35 +78,36 @@ export async function runOpenRegisterEnrichment(input: {
   const startedAt = new Date();
   const leaseExpiresAt = new Date(startedAt.getTime() + 55_000);
   const cost = stageCost(input.stage);
-  const { data: job, error: jobError } = await supabase
-    .from("enrichment_jobs")
-    .insert({
-      workspace_id: input.workspaceId,
-      company_id: input.companyId,
-      search_run_id: input.searchRunId ?? null,
-      provider: "openregister",
-      job_type: input.stage,
-      status: "running",
-      idempotency_key: `${input.companyId}:${input.stage}:${randomUUID()}`,
-      payload: { companyId: company.openregister_company_id },
-      attempt_count: 1,
-      estimated_credits: cost,
-      started_at: startedAt.toISOString(),
-      heartbeat_at: startedAt.toISOString(),
-      lease_expires_at: leaseExpiresAt.toISOString(),
-    })
-    .select("id")
-    .single();
-  if (jobError?.code === "23505") {
-    const { data: active } = await supabase
+  const insertJob = () =>
+    supabase
       .from("enrichment_jobs")
-      .select("id,status,actual_credits,completed_at,payload")
-      .eq("workspace_id", input.workspaceId)
-      .eq("company_id", input.companyId)
-      .eq("provider", "openregister")
-      .eq("job_type", input.stage)
-      .eq("status", "running")
-      .maybeSingle();
+      .insert({
+        workspace_id: input.workspaceId,
+        company_id: input.companyId,
+        search_run_id: input.searchRunId ?? null,
+        provider: "openregister",
+        job_type: input.stage,
+        status: "running",
+        idempotency_key: `${input.companyId}:${input.stage}:${randomUUID()}`,
+        payload: { companyId: company.openregister_company_id },
+        attempt_count: 1,
+        estimated_credits: cost,
+        started_at: startedAt.toISOString(),
+        heartbeat_at: startedAt.toISOString(),
+        lease_expires_at: leaseExpiresAt.toISOString(),
+      })
+      .select("id")
+      .single();
+  let { data: job, error: jobError } = await insertJob();
+  if (jobError?.code === "23505") {
+    const conflict = await recoverConflictingJobLease(supabase, {
+      workspaceId: input.workspaceId,
+      companyId: input.companyId,
+      provider: "openregister",
+      jobType: input.stage,
+    });
+    if (conflict.retry) ({ data: job, error: jobError } = await insertJob());
+    const active = conflict.active;
     if (active)
       return { job: active, skipped: true, available: false, running: true };
   }
@@ -150,10 +156,7 @@ export async function runOpenRegisterEnrichment(input: {
       );
 
     const completedAt = new Date();
-    const actualCredits =
-      process.env.MOCK_PROVIDERS === "false"
-        ? cost * Math.max(1, metrics.requestCount)
-        : 0;
+    const actualCredits = process.env.MOCK_PROVIDERS === "false" ? cost : 0;
     const [jobResult] = await Promise.all([
       supabase
         .from("enrichment_jobs")
@@ -248,10 +251,13 @@ async function persistDetails(
   const contact = asRecord(payload.contact);
   const purpose = asRecord(payload.purpose);
   const legalName = asText(name.name) ?? asText(payload.name);
-  const website =
+  const websiteCandidate =
     asText(contact.website_url) ??
     asText(contact.website) ??
     asText(contact.url);
+  const website = websiteCandidate
+    ? await resolvePublicHttpUrl(websiteCandidate)
+    : null;
   const companyUpdate = {
     ...(legalName ? { legal_name: legalName } : {}),
     ...(asText(payload.legal_form)

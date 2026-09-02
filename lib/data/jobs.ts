@@ -14,6 +14,8 @@ export type StoredJob = {
   completedAt: string | null;
   error: string | null;
   available: boolean | null;
+  candidates: number | null;
+  rejected: number | null;
 };
 
 export async function listJobs(
@@ -43,7 +45,11 @@ export async function listJobs(
       legal_name?: string;
     } | null;
     const errorDetails = row.error_details as { message?: string } | null;
-    const payload = row.payload as { available?: boolean } | null;
+    const payload = row.payload as {
+      available?: boolean;
+      candidates?: number;
+      rejected?: number;
+    } | null;
     return {
       id: row.id,
       companyId: row.company_id,
@@ -57,6 +63,9 @@ export async function listJobs(
       error: errorDetails?.message ?? null,
       available:
         typeof payload?.available === "boolean" ? payload.available : null,
+      candidates:
+        typeof payload?.candidates === "number" ? payload.candidates : null,
+      rejected: typeof payload?.rejected === "number" ? payload.rejected : null,
     };
   });
 }

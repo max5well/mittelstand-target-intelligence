@@ -1,0 +1,129 @@
+# Zielunternehmen: Audit Round 2 (Remediation Verification)
+
+- **Audit date:** 2026-09-02 (evening)
+- **Inputs reviewed:** [`AUDIT-REPORT.md`](./AUDIT-REPORT.md) (round 1) and [`REMEDIATION-REPORT.md`](./REMEDIATION-REPORT.md)
+- **Code state:** commit `4859725` (`origin/main` head at time of review) **plus 15 modified files and 5 untracked source paths** in the working tree (493 insertions / 186 deletions, uncommitted)
+- **Method:** every claim in the remediation ledger was checked by opening the referenced file. Unit suite, typecheck and lint were re-run in a clean container from a snapshot of the working tree. No paid provider call was made, no production configuration was read or modified, no live database access was used. Claims that could only be verified with production or third-party console access are marked as such.
+- **Credits consumed:** 0
+
+## 1. Verdict
+
+**The remediation is substantively correct.** 18 of 19 findings are fixed as described, the one open finding (F-19b) is correctly classified as a Google Cloud console action, and the code quality of the fixes is good (leases, partial unique index, status-aware credit accounting, tolerant schemas, URL policy, real RLS test, German E2E flows).
+
+**However, the repository is already back in the state that produced F-06.** Since the remediation commits were pushed, a new feature set (con|cess sale-listing import, OpenRouter evidence review replacing OpenAI, jobs telemetry) has been written into the working tree and not committed. This working tree contains one regression against a committed fix (F-19c) and introduces two new credit-waste paths. Nothing in it is deployed yet, so production is not affected today, but the audit trail argument from round 1 applies again in full.
+
+**Recommendation:** still READY AFTER NAMED FIXES. The named fixes are now small and listed in §5.
+
+## 2. Verification of the remediation ledger
+
+Legend: **Confirmed** (fix present and does what the report says), **Confirmed with note** (fix present, residual worth knowing), **Not verifiable here** (requires production, Supabase or Vercel access), **Regressed** (fix committed, but the current working tree undoes it).
+
+| Finding | Verdict | Evidence and notes |
+| --- | --- | --- |
+| F-01 Auth bypass flags | **Confirmed** (code) / **Not verifiable here** (Vercel env) | `lib/auth/preview.ts` guards with `NODE_ENV !== "production"`. `tests/auth-preview.test.ts` has the production-rejection case. Removal of the two variables from the Production scope cannot be checked without `vercel env ls`; the report's claim is plausible and should be re-checked once by the account owner. |
+| F-02 Providers dead (402) | **Confirmed** (code side) | `lib/api-errors.ts` maps `ProviderError.status === 402` to the German "Guthaben erschöpft" message with an error ID. `components/company-actions.tsx` renders the exhausted-provider alert. Billing top-up remains an owner action, as stated. |
+| F-03 Failed calls billed | **Confirmed with note** | `creditsForProviderOutcome` in `lib/integrations/http.ts` writes 0 for 402, timeouts, aborts and transport errors. Note: every other status, including 429 and 5xx, is now billed `estimatedCredits × requestCount`. A 429 → 429 → 500 sequence records 30 credits for a call the provider almost certainly did not bill. This overstates (safe direction) but still blocks invoice reconciliation. Recommend billing at most one unit for non-2xx outcomes, or 0 for 429/5xx. |
+| F-04 Discovery ceiling | **Confirmed** | `scrapeOptions` removed from Firecrawl `/v2/search`; `sources: [{ type: "web" }]`; Firecrawl `creditsUsed` takes precedence when present. Manual ceiling 2 + 2 + 10 = 14 now matches the displayed estimate. Scheduled runs (`searchRunId` set) skip the OpenRegister lookup, so 4 is right. |
+| F-05 Read-then-insert race | **Confirmed with note** | Migration `20260902170000` adds the partial unique index on `(workspace_id, company_id, provider, job_type) where status = 'running'`; both enrichment modules handle `23505` as "already running". Residual: the index covers `running` only, not `succeeded` (round 1 suggested both). A second request that reads "no succeeded job" while the first is running, then inserts after the first completes, still double-spends. Narrow window, acceptable, but see NEW-03 for the more important consequence of this design. |
+| F-06 Not reproducible | **Confirmed for the commits, regressed for the working tree** | CI (`.github/workflows/verify.yml`) runs lint, typecheck, unit, RLS, build and E2E. Remediation commits are on `origin/main`. Vercel Git connection not verifiable here. But the working tree is dirty again (see §3). |
+| F-07 Ownership 100× | **Confirmed with note** | `formatPercent` used on the detail page; check constraint `between 0 and 1`; backfill divided `> 1 and <= 100` by 100. Note: a legacy row that held exactly `1` (meaning 1 %) would not have been touched and now reads as 100 %. The report's post-migration aggregate (min 0.1, max 1) means at least one row sits at 1; worth eyeballing that owner once. |
+| F-08 No timeout | **Confirmed** | `AbortSignal.timeout(15_000)` per attempt in `fetchProvider`; `maxDuration = 60` on the enrich route; 55-second leases on jobs; stale-lease recovery in the cron route. See NEW-03 for the recovery cadence. |
+| F-09 SSRF-adjacent URL | **Confirmed with note** | `lib/url-safety.ts` rejects non-HTTP schemes, credentials, localhost, `.local`/`.internal`, IPv6 loopback/ULA/link-local and RFC-1918/link-local IPv4. Enforced on manual input, at use time for stored URLs (`SafePublicHttpUrlSchema.parse` in `external-providers.ts`) and on discovered candidates. Gaps: IPv4-mapped IPv6 (`[::ffff:127.0.0.1]`), `100.64.0.0/10`, and hostnames that resolve to private ranges. Low impact because Firecrawl performs the fetch, not the app. `persistDetails` still stores a provider-supplied `contact.website_url` unvalidated; it is caught at use time, but the user then sees a generic failure with no hint why. |
+| F-10 Zod throws | **Confirmed** | Firecrawl metadata accepts `string \| string[]`; Apollo `id` handled with a `domain:` fallback; OpenRegister details/financials/owners have field-level schemas with `.passthrough()`; search `address` is now structured. |
+| F-11 Owners 404 for AG/SE | **Confirmed** | `best_available=true` is sent (`lib/integrations/openregister/index.ts`). Owners 404 now throws and marks the job `failed` (retryable); only `financials` keeps the "not reported" success path. |
+| F-12 No boundaries | **Confirmed** | `app/(dashboard)/error.tsx`, `loading.tsx`, `app/global-error.tsx` exist. |
+| F-13 Raw messages to client | **Confirmed with note** | Enrich route returns a stable German message plus `errorId`; Zod tree removed. Note: the new `app/api/providers/concess/import/route.ts` does not use `reportApiError`, so it logs without an error ID and without the webhook path. Consistency fix. |
+| F-14 Truncation / monitoring | **Confirmed with note** | `fetchAllRows` pages every collection in 500-row batches, so PostgREST's 1,000-row cap no longer truncates. `instrumentation.ts` implements `onRequestError` with optional webhook. Notes: (a) offset pagination orders on non-unique keys (`updated_at`, `retrieved_at`, `fiscal_period_end`) without an `id` tiebreaker, and `company_ownership_classifications` has no order at all, so rows can be skipped or duplicated across page boundaries once a table exceeds 500 rows; add `.order("id")` as secondary sort. (b) The child queries still use `.in("company_id", ids)` with every company ID; at roughly 300 to 400 companies the GET URL exceeds typical proxy limits. The scaling wall moved, it did not disappear. |
+| F-15 RLS test | **Confirmed** | `scripts/verify-rls-local.mjs` creates two users, asserts cross-workspace `42501` on insert, empty cross-workspace reads, anonymous read `[]` and anonymous insert denial. Wired into CI. |
+| F-16 Stale E2E | **Confirmed** | `tests/e2e/critical-flow.spec.ts` uses the German strings; Playwright runs in CI. |
+| F-17 Mock billing | **Confirmed** | All enrichment paths record 0 credits unless `MOCK_PROVIDERS === "false"`. |
+| F-18 Search > 100 | **Confirmed** | `run-saved-search.ts` follows pagination with a configurable ceiling (`OPENREGISTER_SEARCH_CREDIT_CEILING`, default 100). |
+| F-19a `/mfa` static | **Confirmed** | `app/(auth)/mfa/page.tsx` exports `dynamic = "force-dynamic"`. |
+| F-19b Consent screen name | **Open, correctly classified** | Google Cloud console action. |
+| F-19c Tavily `topic: "news"` | **Regressed in working tree** | Committed code (`a09c9c8`) sends `topic: "news"`. The uncommitted change to `lib/integrations/web-research.ts` reverts it to `topic: "general"` while switching to a brand-based news query. If that is intentional (general search with "News Presse" in the query returns more), fine, but then the remediation ledger entry is no longer true and `publishedAt` stays `null` again. Decide, and record the decision. |
+| F-19d Firecrawl sources | **Confirmed** | `sources: [{ type: "web" }]`. |
+| F-19e `nominal_share` | **Confirmed** | `nominal_share_cents: null`, raw value preserved in `raw_payload`. |
+| F-19f Apollo fields | **Confirmed** | Stored under `hierarchy` in `apollo_organizations`. |
+| F-19g `realtime` option | **Confirmed** | Removed from the adapter. |
+
+### Verification commands (this round, clean container, working-tree snapshot)
+
+| Command | Result |
+| --- | --- |
+| `npx vitest run` | **PASS**: 25 files, 90 tests (report stated 23 / 79 at commit time; the difference is the new con|cess and OpenRouter tests) |
+| `npm run typecheck` | **PASS** |
+| `npm run lint` | **PASS** |
+| `npm run build` | **Not reproducible here**: fails at `next/font` because the container cannot reach Google Fonts. Not a code defect; CI on `fbeebb2` is the authoritative build signal per the remediation report. |
+| `npm test` on the user's machine | **Could not run**: `node_modules` on that machine is built for macOS and the audit shell is a Linux VM. |
+
+## 3. Uncommitted working tree (F-06 recurrence)
+
+`git status` at review time:
+
+- Modified: `.env.example`, `README.md`, `app/(dashboard)/companies/[id]/page.tsx`, `app/(dashboard)/companies/page.tsx`, `components/companies-table.tsx`, `components/company-actions.tsx`, `lib/company-csv.ts`, `lib/data/companies.ts`, `lib/data/jobs.ts`, `lib/enrichment/external-providers.ts` (+232 lines), `lib/integrations/openai/extract.ts` (−113 lines), `lib/integrations/web-research.ts`, `lib/mock-data.ts`, `lib/types.ts`, `tests/external-enrichment.test.ts`
+- Untracked: `app/api/providers/concess/`, `components/import-sale-listings-button.tsx`, `lib/import/`, `lib/integrations/concess/`, `lib/integrations/openrouter/`
+
+This is a coherent feature branch (sale-listing import plus LLM evidence review) and it typechecks, lints and passes tests. It should live on a branch and go through the CI gate before it reaches `main` or Vercel. Until it is committed, the remediation report's "all remediation commits are pushed" claim is true, but the statement "the deployed build is reproducible" will stop being true at the next CLI deploy.
+
+## 4. New findings
+
+### NEW-01 (P2): Pseudo OpenRegister IDs trigger paid OpenRegister calls that can never succeed
+
+- **Where:** `lib/import/concess.ts` writes `openregister_company_id = "concess:<listingId>"`; `app/api/companies/route.ts` writes `manual:<uuid>`. `lib/enrichment/openregister.ts` calls `GET /v1/company/concess:D1234` for these IDs. `components/company-actions.tsx` does not disable OpenRegister actions for them, and "Run all" fires all three stages.
+- **Effect:** each click produces a 404 that is recorded as 10 credits (404 is billed by `creditsForProviderOutcome`), the card shows "Fehlgeschlagen", and the user can click again indefinitely. Whether OpenRegister actually bills a 404 is unknown; the ledger says yes.
+- **Also:** `runWebsiteDiscovery` only skips the 10-credit `/v0/search/lookup` for the `manual:` prefix. A `concess:` company pays 10 credits for a lookup whose result is compared against `"concess:D1234"` and can never match.
+- **Fix:** introduce a single `isOpenRegisterId()` helper (no `manual:` / `concess:` prefix), gate the three OpenRegister cards and "Run all" on it, use it in `verifyCandidates`, and reject such IDs in `runOpenRegisterEnrichment` before a job is created. Add a test.
+
+### NEW-02 (P2): New paid provider (OpenRouter) is outside the credit ledger and has no spending guard
+
+- **Where:** `lib/integrations/openrouter/extract.ts`, called from `runExternalProviderEnrichment` for `tavily_research` and `firecrawl_website`.
+- **What is good:** prompt-injection hygiene is above average. Untrusted content is passed as JSON in the user turn, claims must cite supplied URLs only, and `validateEvidence` drops any claim whose `supporting_excerpt` is not a verbatim substring of the cited source. Failures are caught and do not fail the enrichment job.
+- **Gaps:** (a) Up to 6 sources × 12,000 chars (~18k input tokens) per call plus a 20-claim JSON output, with no per-call or monthly budget and no row in `provider_usage_events`; token usage is only stored per claim in `web_claims.token_usage`. The application's promise that costs are shown before execution now has an unpriced component. (b) `fetchProvider`'s 15-second timeout applies to an LLM call; with ~18k tokens in and structured output this will time out regularly on slower models, silently degrading `aiReview` to "failed". (c) `.env.example` and `vercel.json` CSP still reference OpenAI in one place (`connect-src https://api.openai.com`); harmless server-side, but stale.
+- **Fix:** record one `provider_usage_events` row per OpenRouter call (`provider: "openrouter"`, estimated tokens or price from `usage`), show it on the card estimate, add a daily cap, and give this call its own timeout (30 to 45 s within the 60 s route budget, or move it after the job is marked succeeded).
+
+### NEW-03 (P2): A crashed job blocks its stage for up to 24 hours
+
+- **Where:** partial unique index (`status = 'running'`) plus `23505` handling in both enrichment modules; stale-lease recovery only in `app/api/cron/daily-discovery/route.ts` (04:15 daily).
+- **Effect:** if a serverless invocation is killed before the `catch` runs (platform timeout, OOM, deploy during a request), the row stays `running` with an expired lease. Every retry until the next cron run hits `23505` and returns "already running". Round 1's stranded-job problem was "pollutes history"; it is now "blocks the user".
+- **Fix:** on `23505`, read the conflicting row and, if `lease_expires_at < now()`, mark it `failed` and retry the insert once. Two lines of logic, plus a unit test with a mocked expired lease.
+
+### NEW-04 (P3): con|cess import scrapes a third-party HTML page with 20 parallel requests
+
+- **Where:** `lib/integrations/concess/index.ts` fetches `matchbridge.de/unternehmensboerse/angebote` pages 2..N concurrently via `Promise.all` (up to 20 requests), parses with regular expressions, no robots.txt or terms check.
+- **Effect:** brittle (a markup change silently yields "no parseable sale listings"), likely to trip rate limiting, and a legal review item (scraping a broker's listings into a database). Data quality: `bundesland: "Deutschland"` is written into a field that means federal state; listing titles ("Maschinenbauunternehmen in NRW") become `legal_name` and sit next to real legal entities in the same table and CSV export.
+- **Fix:** serialize page fetches with a small delay, honour robots.txt, add a parser fixture test against a saved page (one exists for structure; add a "changed markup" negative case), leave `bundesland` null, and confirm with the source that automated import is permitted.
+
+### NEW-05 (P3): Offset pagination without a unique tiebreaker
+
+Covered under F-14 above. Add `.order("id", { ascending: true })` as the secondary sort in every `fetchAllRows` query, and add an order to the ownership-classification query.
+
+### NEW-06 (P3): Conservative over-billing on retries
+
+Covered under F-03 above. `estimatedCredits × requestCount` for 429/5xx sequences overstates spend by up to 3×. Providers do not bill rate-limited or failed requests; bill at most one unit, or none, for those.
+
+## 5. Actions before inviting the two users (updated)
+
+| # | Action | Finding | Size |
+| --- | --- | --- | --- |
+| 1 | Commit the current working tree to a branch, let CI run it, merge; do not CLI-deploy from a dirty tree | F-06 | Trivial |
+| 2 | Gate OpenRegister actions and the discovery lookup on real OpenRegister IDs | NEW-01 | Small |
+| 3 | Recover expired leases at insert-conflict time, not only at 04:15 | NEW-03 | Small |
+| 4 | Decide `topic: "news"` vs `"general"` for Tavily research and update the ledger accordingly | F-19c | Trivial |
+| 5 | Record OpenRouter usage in the ledger and give the LLM call a realistic timeout | NEW-02 | Small |
+| 6 | Owner actions carried over unchanged: top up OpenRegister and Tavily and run one controlled enrichment; confirm `before_user_created` hook and PITR in Supabase; rename the OAuth consent screen; pick an alert destination | F-02, §6, F-19b, F-14 | Owner |
+
+First-week items: NEW-04 (con|cess import hardening and legal check), NEW-05 (pagination tiebreaker), NEW-06 (retry billing), F-13 consistency in the con|cess route, and the F-09 residual (validate `contact.website_url` at ingest so the failure surfaces where it originates).
+
+## 6. What was not verified in this round
+
+- Vercel Production environment variables, Git connection and the `Ready` deployment (no Vercel access from the audit environment).
+- Hosted Supabase migration list, the ownership backfill aggregate, the `before_user_created` hook and PITR (no database access used; round 1's live checks were not repeated).
+- GitHub Actions results for `fbeebb2` and later commits (GitHub API not reachable from the audit environment).
+- Production build (`next build` needs Google Fonts; not reachable from the audit container).
+- Any live provider data path (0 credits policy).
+
+## 7. Housekeeping note
+
+During this review a `git status` run from the audit shell left an empty `.git/index.lock` in the repository for a few seconds; it was removed before the review ended. If a later `git` command complains about `index.lock`, that file is safe to delete when no other git process is running.
+
+_Audit round 2 performed 2026-09-02 against commit `4859725` plus the uncommitted working tree. No paid API calls, no credits consumed, no production configuration read or modified, no source files altered._

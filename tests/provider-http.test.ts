@@ -53,8 +53,8 @@ describe("provider credit attribution", () => {
   it.each([
     [402, 0],
     [404, 10],
-    [429, 10],
-    [500, 10],
+    [429, 0],
+    [500, 0],
   ])("maps HTTP %i to %i credits", (status, expected) => {
     expect(
       creditsForProviderOutcome(
@@ -62,6 +62,16 @@ describe("provider credit attribution", () => {
         new ProviderError("provider failure", status),
       ),
     ).toBe(expected);
+  });
+
+  it("never multiplies a non-2xx charge by the retry count", () => {
+    expect(
+      creditsForProviderOutcome(
+        10,
+        new ProviderError("not found", 404, undefined, 3),
+        3,
+      ),
+    ).toBe(10);
   });
 
   it("does not bill transport failures", () => {

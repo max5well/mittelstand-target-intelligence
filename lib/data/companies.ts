@@ -10,6 +10,7 @@ import { getWz2025IndustryName } from "@/lib/wz2025";
 
 type Row = Record<string, unknown>;
 const DATABASE_PAGE_SIZE = 500;
+const COMPANY_ID_BATCH_SIZE = 100;
 
 type PageResult<T> = PromiseLike<{
   data: T[] | null;
@@ -33,10 +34,32 @@ export async function fetchAllRows<T>(
   }
 }
 
+export async function fetchAllRowsByCompanyIds<T>(
+  companyIds: string[],
+  queryPage: (batch: string[], from: number, to: number) => PageResult<T>,
+  label: string,
+) {
+  const rows: T[] = [];
+  for (
+    let offset = 0;
+    offset < companyIds.length;
+    offset += COMPANY_ID_BATCH_SIZE
+  ) {
+    const batch = companyIds.slice(offset, offset + COMPANY_ID_BATCH_SIZE);
+    rows.push(
+      ...(await fetchAllRows((from, to) => queryPage(batch, from, to), label)),
+    );
+  }
+  return rows;
+}
+
 export async function listCompanies(
   workspaceId: string,
   userId: string,
-  options: { includeArchived?: boolean } = {},
+  options: {
+    includeArchived?: boolean;
+    saleListings?: "exclude" | "only" | "include";
+  } = {},
 ): Promise<Company[]> {
   if (
     !process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -45,14 +68,25 @@ export async function listCompanies(
   )
     return [];
   const supabase = createAdminClient();
-  const companyRows = await fetchAllRows((from, to) => {
+  const allCompanyRows = await fetchAllRows((from, to) => {
     let query = supabase
       .from("companies")
       .select("*")
       .eq("workspace_id", workspaceId);
     if (!options.includeArchived) query = query.neq("status", "archived");
-    return query.order("updated_at", { ascending: false }).range(from, to);
+    return query
+      .order("updated_at", { ascending: false })
+      .order("id", { ascending: true })
+      .range(from, to);
   }, "companies");
+  const saleListingMode = options.saleListings ?? "exclude";
+  const companyRows = allCompanyRows.filter((row) => {
+    const isSaleListing = Boolean(
+      asRecord(asRecord(row.raw_provider_payload).sale_listing).listing_id,
+    );
+    if (saleListingMode === "include") return true;
+    return saleListingMode === "only" ? isSaleListing : !isSaleListing;
+  });
   if (!companyRows.length) return [];
 
   const ids = companyRows.map((row) => row.id);
@@ -67,74 +101,88 @@ export async function listCompanies(
     favorites,
     apollo,
   ] = await Promise.all([
-    fetchAllRows(
-      (from, to) =>
+    fetchAllRowsByCompanyIds(
+      ids,
+      (companyIds, from, to) =>
         supabase
           .from("company_locations")
           .select("*")
-          .in("company_id", ids)
+          .in("company_id", companyIds)
           .order("retrieved_at", { ascending: false })
+          .order("id", { ascending: true })
           .range(from, to),
       "company locations",
     ),
-    fetchAllRows(
-      (from, to) =>
+    fetchAllRowsByCompanyIds(
+      ids,
+      (companyIds, from, to) =>
         supabase
           .from("company_financial_periods")
           .select("*")
-          .in("company_id", ids)
+          .in("company_id", companyIds)
           .order("fiscal_period_end", { ascending: false })
+          .order("id", { ascending: true })
           .range(from, to),
       "company financial periods",
     ),
-    fetchAllRows(
-      (from, to) =>
+    fetchAllRowsByCompanyIds(
+      ids,
+      (companyIds, from, to) =>
         supabase
           .from("company_ownership_classifications")
           .select("*")
-          .in("company_id", ids)
+          .in("company_id", companyIds)
           .eq("is_current", true)
+          .order("id", { ascending: true })
           .range(from, to),
       "ownership classifications",
     ),
-    fetchAllRows(
-      (from, to) =>
+    fetchAllRowsByCompanyIds(
+      ids,
+      (companyIds, from, to) =>
         supabase
           .from("company_owners")
           .select("*")
-          .in("company_id", ids)
+          .in("company_id", companyIds)
           .order("ownership_percent", { ascending: false })
+          .order("id", { ascending: true })
           .range(from, to),
       "company owners",
     ),
-    fetchAllRows(
-      (from, to) =>
+    fetchAllRowsByCompanyIds(
+      ids,
+      (companyIds, from, to) =>
         supabase
           .from("company_management")
           .select("*")
-          .in("company_id", ids)
+          .in("company_id", companyIds)
           .is("ended_on", null)
           .order("retrieved_at", { ascending: false })
+          .order("id", { ascending: true })
           .range(from, to),
       "company management",
     ),
-    fetchAllRows(
-      (from, to) =>
+    fetchAllRowsByCompanyIds(
+      ids,
+      (companyIds, from, to) =>
         supabase
           .from("company_scores")
           .select("*")
-          .in("company_id", ids)
+          .in("company_id", companyIds)
           .order("calculated_at", { ascending: false })
+          .order("id", { ascending: true })
           .range(from, to),
       "company scores",
     ),
-    fetchAllRows(
-      (from, to) =>
+    fetchAllRowsByCompanyIds(
+      ids,
+      (companyIds, from, to) =>
         supabase
           .from("geocoding_results")
           .select("*")
-          .in("company_id", ids)
+          .in("company_id", companyIds)
           .order("retrieved_at", { ascending: false })
+          .order("id", { ascending: true })
           .range(from, to),
       "geocoding results",
     ),
@@ -145,16 +193,19 @@ export async function listCompanies(
           .select("company_id")
           .eq("workspace_id", workspaceId)
           .eq("user_id", userId)
+          .order("id", { ascending: true })
           .range(from, to),
       "favorites",
     ),
-    fetchAllRows(
-      (from, to) =>
+    fetchAllRowsByCompanyIds(
+      ids,
+      (companyIds, from, to) =>
         supabase
           .from("apollo_organizations")
           .select("*")
-          .in("company_id", ids)
+          .in("company_id", companyIds)
           .order("retrieved_at", { ascending: false })
+          .order("id", { ascending: true })
           .range(from, to),
       "Apollo organizations",
     ),
@@ -195,6 +246,25 @@ export async function listCompanies(
     const geo = geoByCompany.get(id);
     const apolloOrganization = apolloByCompany.get(id);
     const payload = (row.raw_provider_payload ?? {}) as Row;
+    const salePayload = asRecord(payload.sale_listing);
+    const saleListing = salePayload.listing_id
+      ? {
+          active: salePayload.active !== false,
+          provider: String(salePayload.provider ?? payload.source ?? "unknown"),
+          providerLabel: String(
+            salePayload.provider_label ?? salePayload.provider ?? "Quelle",
+          ),
+          listingId: String(salePayload.listing_id),
+          sourceUrl: String(salePayload.source_url ?? ""),
+          askingPriceCents:
+            salePayload.asking_price_cents == null
+              ? null
+              : Number(salePayload.asking_price_cents),
+          location:
+            salePayload.location == null ? null : String(salePayload.location),
+          retrievedAt: String(salePayload.retrieved_at ?? row.updated_at ?? ""),
+        }
+      : null;
     const register = (payload.register ?? {}) as Row;
     const industryCodes = payload.industry_codes;
     const wz2025 = asWzCodes(industryCodes);
@@ -230,10 +300,16 @@ export async function listCompanies(
       postcode: String(location?.postcode ?? "N/A"),
       industryCode,
       industry:
-        industryCode === "N/A" ? "N/A" : getWz2025IndustryName(industryCode),
+        industryCode === "N/A"
+          ? String(payload.industry_name ?? "N/A")
+          : getWz2025IndustryName(industryCode),
       website: row.website_url,
       employees:
-        financial?.employees == null ? null : Number(financial.employees),
+        financial?.employees == null
+          ? payload.employees == null
+            ? null
+            : Number(payload.employees)
+          : Number(financial.employees),
       employeeYear: fiscalPeriod,
       apolloEmployees:
         apolloOrganization?.estimated_employees == null
@@ -241,12 +317,22 @@ export async function listCompanies(
           : Number(apolloOrganization.estimated_employees),
       revenueCents:
         financial?.revenue_cents == null
-          ? null
+          ? payload.revenue_cents == null
+            ? null
+            : Number(payload.revenue_cents)
           : Number(financial.revenue_cents),
       ebitdaCents:
-        financial?.ebitda_cents == null ? null : Number(financial.ebitda_cents),
+        financial?.ebitda_cents == null
+          ? payload.ebitda_cents == null
+            ? null
+            : Number(payload.ebitda_cents)
+          : Number(financial.ebitda_cents),
       ebitCents:
-        financial?.ebit_cents == null ? null : Number(financial.ebit_cents),
+        financial?.ebit_cents == null
+          ? payload.ebit_cents == null
+            ? null
+            : Number(payload.ebit_cents)
+          : Number(financial.ebit_cents),
       equityCents:
         financial?.equity_cents == null ? null : Number(financial.equity_cents),
       debtCents:
@@ -302,8 +388,15 @@ export async function listCompanies(
       updatedAt: row.updated_at,
       sourceType: "reported" as const,
       fictional: false,
+      saleListing,
     };
   });
+}
+
+function asRecord(value: unknown): Row {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Row)
+    : {};
 }
 
 function asWzCodes(value: unknown): string[] {
@@ -324,6 +417,7 @@ export async function getCompanyById(
 ) {
   const companies = await listCompanies(workspaceId, userId, {
     includeArchived: true,
+    saleListings: "include",
   });
   return companies.find((company) => company.id === companyId) ?? null;
 }

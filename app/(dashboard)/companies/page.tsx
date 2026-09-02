@@ -32,6 +32,7 @@ export default async function CompaniesPage() {
       />
       {companies.length ? (
         <CompaniesTable
+          key={`${companies.length}:${companies[0]?.updatedAt ?? "empty"}`}
           initialCompanies={companies}
           workspaceId={user.workspaceId}
         />
