@@ -81,14 +81,16 @@ const actions: Array<{
     stage: "firecrawl_website",
     provider: "firecrawl",
     label: "Unternehmenswebsite analysieren",
-    description: "Inhalte der offiziellen Website als Quellenbeleg speichern",
+    description:
+      "Inhalte der offiziellen Website analysieren; nicht als externe Quelle anzeigen",
     credits: "ca. 1–5 Cr. + ≤22k KI-Tokens",
   },
   {
     stage: "tavily_research",
     provider: "tavily",
     label: "Web & Nachrichten recherchieren",
-    description: "Externe Quellen, Titel, Auszüge und URLs",
+    description:
+      "Unabhängige Quellen mit Auszügen; die eigene Domain wird ausgeschlossen",
     credits: "2 Cr. + ≤22k KI-Tokens",
   },
 ];

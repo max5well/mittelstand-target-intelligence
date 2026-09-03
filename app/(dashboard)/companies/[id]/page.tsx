@@ -10,7 +10,9 @@ import {
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CompanyActions } from "@/components/company-actions";
+import { CompanyCopilot } from "@/components/company-copilot";
 import { requireUser } from "@/lib/auth/user";
+import { listCompanyCopilotRuns } from "@/lib/data/copilot";
 import { getCompanyById } from "@/lib/data/companies";
 import { getCompanyEnrichmentEvidence } from "@/lib/data/enrichment";
 import { getProviderHealth, listJobs } from "@/lib/data/jobs";
@@ -33,10 +35,11 @@ export default async function CompanyDetailPage({
   const [{ id }, user] = await Promise.all([params, requireUser()]);
   const company = await getCompanyById(user.workspaceId, user.id, id);
   if (!company) notFound();
-  const [jobs, enrichment, providerHealth] = await Promise.all([
+  const [jobs, enrichment, providerHealth, copilotRuns] = await Promise.all([
     listJobs(user.workspaceId, company.id),
-    getCompanyEnrichmentEvidence(user.workspaceId, company.id),
+    getCompanyEnrichmentEvidence(user.workspaceId, company.id, company.website),
     getProviderHealth(user.workspaceId),
+    listCompanyCopilotRuns(user.workspaceId, company.id),
   ]);
   const readyProviders = getIntegrationStatuses().filter(
     (provider) => provider.usable,
@@ -211,6 +214,13 @@ export default async function CompanyDetailPage({
         ))}
       </div>
 
+      <CompanyCopilot
+        companyId={company.id}
+        companyName={company.name}
+        workspaceId={user.workspaceId}
+        initialRuns={copilotRuns}
+      />
+
       <div className="mt-7 grid gap-6 xl:grid-cols-[1fr_360px]">
         <section className="rounded-xl border border-[#d8d5cc] bg-[#faf9f6] p-6">
           <h2 className="text-base font-semibold">Aktuelles Profil</h2>
@@ -330,7 +340,7 @@ export default async function CompanyDetailPage({
                     className="rounded-lg border border-[#e0ddd5] bg-white p-4"
                   >
                     <p className="text-xs font-semibold uppercase tracking-[.08em] text-[#75807c]">
-                      {source.provider} · Quellenbeleg
+                      {source.provider} · Externe Quelle
                       {formatRetrievedAt(source.retrieved_at)}
                     </p>
                     <a
@@ -346,6 +356,11 @@ export default async function CompanyDetailPage({
                         <span className="mt-1 block break-all text-xs leading-5 text-[#68736e] underline decoration-[#b9c3bf] underline-offset-2 group-hover:decoration-[#087b62]">
                           {source.url}
                         </span>
+                        {source.supporting_excerpt ? (
+                          <span className="mt-2 block text-sm leading-6 text-[#596660]">
+                            {source.supporting_excerpt}
+                          </span>
+                        ) : null}
                       </span>
                       <ExternalLink
                         aria-hidden="true"
@@ -358,8 +373,9 @@ export default async function CompanyDetailPage({
               </div>
             ) : (
               <p className="mt-2 text-sm text-[#7a8580]">
-                Für dieses Unternehmen wurde noch kein Ergebnis von Apollo,
-                Tavily oder Firecrawl gespeichert.
+                Für dieses Unternehmen wurde noch keine externe
+                Anbieteranreicherung gespeichert. Die eigene Website wird hier
+                bewusst nicht als Quelle wiederholt.
               </p>
             )}
           </div>

@@ -11,6 +11,7 @@ import {
   buildCompanyResearchQuery,
   buildCompanyWebsiteQuery,
   FirecrawlProvider,
+  TavilyProvider,
 } from "@/lib/integrations/web-research";
 
 afterEach(() => {
@@ -170,8 +171,38 @@ describe("Tavily company evidence relevance", () => {
 
   it("uses the core brand rather than the legal entity and URL for research", () => {
     expect(buildCompanyResearchQuery("Kelvion Germany GmbH", "Bochum")).toBe(
-      '"Kelvion" Bochum Unternehmen News Presse',
+      '"Kelvion" Bochum Nachrichten Übernahme Investition Expansion Management',
     );
+  });
+
+  it("excludes the verified company domain from external research", async () => {
+    vi.stubEnv("MOCK_PROVIDERS", "false");
+    vi.stubEnv("TAVILY_API_KEY", "test-key");
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({
+        results: [
+          {
+            url: "https://www.handelsblatt.com/unternehmen/kelvion",
+            title: "Kelvion investiert",
+            content: "Kelvion plant eine neue Investition in Deutschland.",
+            score: 0.9,
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new TavilyProvider().research({
+      companyName: "Kelvion Germany GmbH",
+      verifiedDomain: "https://www.kelvion.com/de/",
+      city: "Bochum",
+    });
+
+    const [, request] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      exclude_domains: ["kelvion.com"],
+      topic: "news",
+    });
   });
 
   it("uses the search-result address when paid detail hydration is unavailable", () => {

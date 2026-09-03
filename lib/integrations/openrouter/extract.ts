@@ -3,6 +3,12 @@ import "server-only";
 import { z } from "zod";
 import type { WebSource } from "../web-research";
 import { fetchProvider, type ProviderRequestMetrics } from "../http";
+import {
+  normalizeOpenRouterResponse,
+  OpenRouterResponseSchema,
+  type OpenRouterUsage,
+  parseStructuredContent,
+} from "./response";
 
 const DEFAULT_MODEL = "z-ai/glm-5.3-flash";
 const MAX_SOURCES = 6;
@@ -58,32 +64,10 @@ export const IntelligenceOutputSchema = z.object({
   claims: z.array(EvidenceClaimSchema).max(20),
 });
 
-const OpenRouterResponseSchema = z
-  .object({
-    model: z.string(),
-    choices: z
-      .array(
-        z.object({
-          message: z.object({ content: z.string() }),
-        }),
-      )
-      .min(1),
-    usage: z
-      .object({
-        prompt_tokens: z.number().int().nonnegative().optional(),
-        completion_tokens: z.number().int().nonnegative().optional(),
-        total_tokens: z.number().int().nonnegative().optional(),
-        cost: z.number().nonnegative().optional(),
-      })
-      .passthrough()
-      .optional(),
-  })
-  .passthrough();
-
 export type ReviewedIntelligence = {
   output: z.infer<typeof IntelligenceOutputSchema>;
   model: string;
-  usage: z.infer<typeof OpenRouterResponseSchema>["usage"];
+  usage: OpenRouterUsage;
   estimatedTokens: number;
   requestCount: number;
   promptVersion: "web-intelligence-v2";
@@ -148,6 +132,9 @@ export async function extractIntelligence(
         },
         temperature: 0,
         max_tokens: MAX_OUTPUT_TOKENS,
+        stream: false,
+        provider: { require_parameters: true },
+        plugins: [{ id: "response-healing" }],
       }),
     },
     OpenRouterResponseSchema,
@@ -156,14 +143,18 @@ export async function extractIntelligence(
     OPENROUTER_REQUEST_TIMEOUT_MS,
   );
 
-  const parsed = IntelligenceOutputSchema.parse(
-    JSON.parse(response.choices[0].message.content),
+  const requestedModel = process.env.OPENROUTER_MODEL || DEFAULT_MODEL;
+  const normalized = normalizeOpenRouterResponse(response, requestedModel);
+  const parsed = parseStructuredContent(
+    normalized.content,
+    IntelligenceOutputSchema,
+    normalized.model,
   );
   const output = validateEvidence(parsed, inputSources);
   return {
     output,
-    model: response.model,
-    usage: response.usage,
+    model: normalized.model,
+    usage: normalized.usage,
     estimatedTokens: estimateOpenRouterTokens(inputSources),
     requestCount: Math.max(1, metrics.requestCount),
     promptVersion: "web-intelligence-v2",

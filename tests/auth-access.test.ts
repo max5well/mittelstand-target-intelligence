@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   ALLOWED_EMAILS,
+  EVAL_ADMIN_EMAIL,
   isAllowedEmail,
   isAllowedGoogleUser,
+  isEvalAdminEmail,
 } from "@/lib/auth/access";
 
 describe("production account allowlist", () => {
@@ -31,5 +33,11 @@ describe("production account allowlist", () => {
         app_metadata: { provider: "email" },
       }),
     ).toBe(false);
+  });
+
+  it("limits the Eval Console to the designated owner", () => {
+    expect(EVAL_ADMIN_EMAIL).toBe("wiese@dge.technology");
+    expect(isEvalAdminEmail(" WIESE@DGE.TECHNOLOGY ")).toBe(true);
+    expect(isEvalAdminEmail("leonhardt@dge.technology")).toBe(false);
   });
 });

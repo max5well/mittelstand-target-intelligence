@@ -1,9 +1,10 @@
 import "server-only";
 import { z } from "zod";
 import { fetchProvider, type ProviderRequestMetrics } from "./http";
+import { SafePublicHttpUrlSchema } from "@/lib/url-safety";
 
 export type WebSource = {
-  provider: "firecrawl" | "tavily";
+  provider: "firecrawl" | "tavily" | "exa" | "openrouter" | "stored";
   url: string;
   title: string | null;
   content: string;
@@ -80,12 +81,17 @@ export class FirecrawlProvider implements WebResearchProvider {
   async research(input: { companyName: string; verifiedDomain?: string }) {
     if (!input.verifiedDomain)
       throw new Error("Firecrawl requires a verified company website");
+    return this.scrapeUrl(input.verifiedDomain, input.companyName);
+  }
+
+  async scrapeUrl(url: string, companyName?: string) {
+    const safeUrl = SafePublicHttpUrlSchema.parse(url);
     if (process.env.MOCK_PROVIDERS !== "false")
       return [
         {
           provider: "firecrawl" as const,
-          url: input.verifiedDomain,
-          title: `${input.companyName} — company website`,
+          url: safeUrl,
+          title: `${companyName ?? "Company"} — company website`,
           content:
             "Fictional first-party fixture covering products, industries, locations, management and careers.",
           publishedAt: null,
@@ -103,7 +109,7 @@ export class FirecrawlProvider implements WebResearchProvider {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          url: input.verifiedDomain,
+          url: safeUrl,
           formats: ["markdown"],
           onlyMainContent: true,
           location: { country: "DE", languages: ["de-DE", "en-US"] },
@@ -122,7 +128,7 @@ export class FirecrawlProvider implements WebResearchProvider {
       ? [
           {
             provider: "firecrawl" as const,
-            url: page.metadata?.sourceURL ?? input.verifiedDomain,
+            url: page.metadata?.sourceURL ?? safeUrl,
             title: firstText(page.metadata?.title),
             content: page.markdown ?? "",
             publishedAt: null,
@@ -211,12 +217,32 @@ export class TavilyProvider implements WebResearchProvider {
     verifiedDomain?: string;
     city?: string;
   }) {
+    return this.search(
+      buildCompanyResearchQuery(input.companyName, input.city),
+      {
+        maxResults: 10,
+        topic: "news",
+        excludeDomains: input.verifiedDomain
+          ? [websiteHostname(input.verifiedDomain)]
+          : undefined,
+      },
+    );
+  }
+
+  async search(
+    query: string,
+    options: {
+      maxResults?: number;
+      topic?: "general" | "news";
+      excludeDomains?: string[];
+    } = {},
+  ) {
     if (process.env.MOCK_PROVIDERS !== "false")
       return [
         {
           provider: "tavily" as const,
           url: "https://example.com/fictional-news",
-          title: `Fictional news about ${input.companyName}`,
+          title: `Fictional result for ${query}`,
           content:
             "Fixture evidence for a management change and planned production expansion.",
           publishedAt: "2026-06-14",
@@ -234,11 +260,12 @@ export class TavilyProvider implements WebResearchProvider {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          query: buildCompanyResearchQuery(input.companyName, input.city),
+          query,
           search_depth: "advanced",
-          topic: "news",
-          max_results: 10,
+          topic: options.topic ?? "general",
+          max_results: Math.min(Math.max(options.maxResults ?? 5, 1), 10),
           include_raw_content: true,
+          exclude_domains: options.excludeDomains,
         }),
       },
       TavilySchema,
@@ -293,7 +320,11 @@ export function buildCompanyResearchQuery(companyName: string, city?: string) {
     /\s+(?:germany|deutschland)$/i,
     "",
   );
-  return `\"${brandName || companyName}\" ${city ?? "Deutschland"} Unternehmen News Presse`;
+  return `\"${brandName || companyName}\" ${city ?? "Deutschland"} Nachrichten Übernahme Investition Expansion Management`;
+}
+
+function websiteHostname(value: string) {
+  return new URL(value).hostname.toLowerCase().replace(/^www\./, "");
 }
 
 function companyBrandName(companyName: string) {

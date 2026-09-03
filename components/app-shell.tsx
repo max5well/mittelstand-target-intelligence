@@ -5,6 +5,7 @@ import {
   BriefcaseBusiness,
   Building2,
   DatabaseZap,
+  FlaskConical,
   Globe2,
   Map,
   Settings,
@@ -29,11 +30,19 @@ const navigation = [
 export function AppShell({
   children,
   userEmail = "mock.admin@example.com",
+  canAccessEvalConsole = false,
 }: {
   children: ReactNode;
   userEmail?: string;
+  canAccessEvalConsole?: boolean;
 }) {
   const pathname = usePathname();
+  const visibleNavigation = canAccessEvalConsole
+    ? [
+        ...navigation,
+        { label: "Eval Console", href: "/evals", icon: FlaskConical },
+      ]
+    : navigation;
   return (
     <main className="min-h-screen bg-[#f3f0e8] text-[#1d2522]">
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-[244px] flex-col bg-[#15352e] text-white lg:flex">
@@ -57,7 +66,7 @@ export function AppShell({
           aria-label="Hauptnavigation"
           className="space-y-1 px-3 py-6 text-sm"
         >
-          {navigation.map(({ label, href, icon: Icon }) => {
+          {visibleNavigation.map(({ label, href, icon: Icon }) => {
             const active = pathname === href || pathname.startsWith(`${href}/`);
             return (
               <Link

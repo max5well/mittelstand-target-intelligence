@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { SafePublicHttpUrlSchema, isPublicHttpUrl } from "@/lib/url-safety";
+import {
+  SafePublicHttpUrlSchema,
+  isPublicHttpUrl,
+  isSameWebsiteUrl,
+} from "@/lib/url-safety";
 
 describe("public website URL validation", () => {
   it.each([
@@ -28,5 +32,25 @@ describe("public website URL validation", () => {
 
   it("does not confuse a public hostname with a private IPv6 prefix", () => {
     expect(isPublicHttpUrl("https://fca.de")).toBe(true);
+  });
+});
+
+describe("website identity", () => {
+  it("treats www and subdomains as the same first-party website", () => {
+    expect(
+      isSameWebsiteUrl(
+        "https://news.kelvion.com/article",
+        "https://www.kelvion.com",
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps independent domains distinct", () => {
+    expect(
+      isSameWebsiteUrl(
+        "https://www.handelsblatt.com/unternehmen/kelvion",
+        "https://kelvion.com",
+      ),
+    ).toBe(false);
   });
 });

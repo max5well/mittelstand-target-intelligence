@@ -47,6 +47,54 @@ describe("provider HTTP errors", () => {
     expect(request.signal).toBeInstanceOf(AbortSignal);
     expect(PROVIDER_REQUEST_TIMEOUT_MS).toBe(15_000);
   });
+
+  it("logs safe schema issue paths without logging provider payload values", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(Response.json({ secret: "do-not-log" })),
+    );
+
+    await expect(
+      fetchProvider(
+        "https://api.example.com/result",
+        {},
+        z.object({ ok: z.boolean() }),
+        1,
+      ),
+    ).rejects.toBeInstanceOf(ProviderError);
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Provider response schema mismatch",
+      expect.objectContaining({
+        host: "api.example.com",
+        status: 200,
+        issues: [expect.objectContaining({ path: "ok" })],
+      }),
+    );
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain("do-not-log");
+    errorSpy.mockRestore();
+  });
+
+  it("accepts a JSON response accidentally framed as a single SSE event", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response('data: {"ok":true}\n\ndata: [DONE]\n', {
+          headers: { "content-type": "text/event-stream" },
+        }),
+      ),
+    );
+
+    await expect(
+      fetchProvider(
+        "https://api.example.com/result",
+        {},
+        z.object({ ok: z.boolean() }),
+        1,
+      ),
+    ).resolves.toEqual({ ok: true });
+  });
 });
 
 describe("provider credit attribution", () => {

@@ -36,9 +36,19 @@ export async function fetchProvider<T extends z.ZodType>(
       signal,
     });
     if (response.ok) {
+      let body: unknown;
+      const responseText = await response.text();
       try {
-        return schema.parse(await response.json());
+        body = parseProviderResponseText(responseText);
       } catch {
+        console.error("Provider returned invalid JSON", {
+          host: new URL(url).hostname,
+          status: response.status,
+          contentType: response.headers.get("content-type"),
+          bodyLength: responseText.length,
+          eventStreamFraming: /^\s*data:/m.test(responseText),
+          byteOrderMark: responseText.startsWith("\uFEFF"),
+        });
         throw new ProviderError(
           `Provider response from ${new URL(url).hostname} did not match the expected schema.`,
           response.status,
@@ -46,6 +56,24 @@ export async function fetchProvider<T extends z.ZodType>(
           metrics?.requestCount ?? attempt + 1,
         );
       }
+      const parsed = schema.safeParse(body);
+      if (!parsed.success) {
+        console.error("Provider response schema mismatch", {
+          host: new URL(url).hostname,
+          status: response.status,
+          issues: parsed.error.issues.slice(0, 10).map((issue) => ({
+            code: issue.code,
+            path: issue.path.join("."),
+          })),
+        });
+        throw new ProviderError(
+          `Provider response from ${new URL(url).hostname} did not match the expected schema.`,
+          response.status,
+          undefined,
+          metrics?.requestCount ?? attempt + 1,
+        );
+      }
+      return parsed.data;
     }
     const retryAfter = response.headers.get("retry-after");
     const retryAfterMs = retryAfter ? Number(retryAfter) * 1000 : undefined;
@@ -77,6 +105,65 @@ export async function fetchProvider<T extends z.ZodType>(
     undefined,
     metrics?.requestCount ?? attempts,
   );
+}
+
+function parseProviderResponseText(value: string): unknown {
+  const normalized = value.replace(/^\uFEFF/, "").trim();
+  try {
+    return JSON.parse(normalized);
+  } catch (jsonError) {
+    const eventPayloads = normalized
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trim())
+      .filter((line) => line && line !== "[DONE]");
+    if (eventPayloads.length === 1) return JSON.parse(eventPayloads[0]);
+    if (eventPayloads.length > 1) {
+      const events = eventPayloads.map((payload) => JSON.parse(payload));
+      const merged = mergeOpenAiEventStream(events);
+      if (merged) return merged;
+    }
+    throw jsonError;
+  }
+}
+
+function mergeOpenAiEventStream(events: unknown[]) {
+  const records = events.filter(isRecord);
+  if (!records.length) return null;
+  let content = "";
+  let finishReason: unknown = null;
+  let messageFound = false;
+  for (const event of records) {
+    const choices = Array.isArray(event.choices) ? event.choices : [];
+    const choice = choices.find(isRecord);
+    if (!choice) continue;
+    const message = isRecord(choice.message) ? choice.message : null;
+    const delta = isRecord(choice.delta) ? choice.delta : null;
+    const part = message?.content ?? delta?.content;
+    if (typeof part === "string") {
+      content += part;
+      messageFound = true;
+    }
+    if (choice.finish_reason != null) finishReason = choice.finish_reason;
+  }
+  if (!messageFound) return null;
+  const first = records[0];
+  const last = records[records.length - 1];
+  return {
+    ...first,
+    ...last,
+    choices: [
+      {
+        finish_reason: finishReason,
+        message: { role: "assistant", content },
+      },
+    ],
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 /**
