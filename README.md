@@ -100,6 +100,35 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
+For fast exploratory browser checks during local UI work, the repository also pins
+`agent-browser`. It complements the repeatable Playwright suite; it does not replace
+`npm run test:e2e`.
+
+Install or discover a local Chrome binary once:
+
+```bash
+npm run browser:install
+npm run browser:doctor
+```
+
+Then start the app with local mock data in one terminal and drive it from another:
+
+```bash
+LOCAL_AUTH_BYPASS=true MOCK_PROVIDERS=true npm run dev
+
+npm run browser -- open http://localhost:3000/overview
+npm run browser -- snapshot -i
+npm run browser -- screenshot --full
+npm run browser -- console
+npm run browser -- errors
+npm run browser -- close
+```
+
+Take a fresh snapshot after navigation or dynamic UI changes because element refs are
+page-state-specific. Run `npm run browser -- skills get core` for the CLI guide that
+matches the pinned version. The current pin preserves the repository's Node 22 runtime
+contract; upgrade it when the project moves to Node 24 or newer.
+
 For a linked Supabase project, also run:
 
 ```bash
