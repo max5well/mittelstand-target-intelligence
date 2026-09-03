@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/app-shell";
+import { DeleteSavedSearchButton } from "@/components/delete-saved-search-button";
 import { EmptyDataState } from "@/components/empty-data-state";
 import { SearchBuilder } from "@/components/search-builder";
 import { acquisitionTargetPresets } from "@/lib/acquisition-target-preset";
@@ -130,6 +131,13 @@ export default async function SearchesPage() {
                         </dd>
                       </div>
                     </dl>
+                    <div className="mt-5 flex justify-end border-t border-[#e3e0d8] pt-4">
+                      <DeleteSavedSearchButton
+                        searchId={search.id}
+                        searchName={search.name}
+                        workspaceId={user.workspaceId}
+                      />
+                    </div>
                   </article>
                 ))}
               </div>
