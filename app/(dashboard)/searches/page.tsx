@@ -67,6 +67,7 @@ export default async function SearchesPage() {
                     <SearchBuilder
                       preset={preset}
                       triggerLabel={`${preset.name} einrichten`}
+                      workspaceId={user.workspaceId}
                     />
                   </div>
                 </article>
