@@ -71,12 +71,14 @@ function formatLocalizedNumber(value: string) {
 }
 
 export function SearchBuilder({
+  workspaceId,
   triggerLabel = "Neue gespeicherte Suche",
   preset = acquisitionTargetPreset,
 }: {
+  workspaceId: string;
   triggerLabel?: string;
   preset?: AcquisitionTargetPreset;
-} = {}) {
+}) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
   const [open, setOpen] = useState(false);
@@ -223,7 +225,10 @@ export function SearchBuilder({
       const body = requestBody(false);
       const response = await fetch("/api/providers/openregister/search", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-workspace-id": workspaceId,
+        },
         body: JSON.stringify({
           filters: body.filters,
           pagination: { page: 1, per_page: 1 },
@@ -271,7 +276,10 @@ export function SearchBuilder({
     try {
       const response = await fetch("/api/searches", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-workspace-id": workspaceId,
+        },
         body: JSON.stringify(requestBody(runNow, activateSchedule)),
       });
       const result = (await response.json()) as SearchApiResponse;
