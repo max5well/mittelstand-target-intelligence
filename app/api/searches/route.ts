@@ -12,7 +12,7 @@ const CreateSearchSchema = z.object({
   name: z.string().trim().min(2).max(120),
   description: z.string().trim().max(500).optional().default(""),
   summary: z.string().trim().min(2).max(1000),
-  filters: z.array(OpenRegisterFilterSchema).min(1),
+  filters: z.array(OpenRegisterFilterSchema).default([]),
   hydrationMode: z.enum(["lean", "full", "custom"]),
   dailyTarget: z.number().int().min(1).max(100),
   scheduleTime: z

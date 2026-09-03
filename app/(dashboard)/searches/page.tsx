@@ -1,7 +1,6 @@
 import { PageHeader } from "@/components/app-shell";
 import { EmptyDataState } from "@/components/empty-data-state";
 import { SearchBuilder } from "@/components/search-builder";
-import { acquisitionTargetPresets } from "@/lib/acquisition-target-preset";
 import { requireUser } from "@/lib/auth/user";
 import { listSavedSearches } from "@/lib/data/searches";
 import { jobStatusLabel } from "@/lib/format";
@@ -26,6 +25,11 @@ export default async function SearchesPage() {
         eyebrow="Suchmaschine"
         title="Gespeicherte Suchen"
         description="Erstellen Sie eine OpenRegister-Abfrage, führen Sie sie bei Bedarf aus und speichern Sie Filter sowie Ausführungshistorie."
+        action={
+          openRegisterReady ? (
+            <SearchBuilder workspaceId={user.workspaceId} />
+          ) : undefined
+        }
       />
       {!openRegisterReady ? (
         <EmptyDataState
@@ -34,49 +38,8 @@ export default async function SearchesPage() {
         />
       ) : (
         <>
-          <section className="mt-8">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[.14em] text-[#13745f]">
-                Neue Suchabfragen
-              </p>
-              <h2 className="mt-2 text-xl font-semibold">
-                Zwei getrennte Zielgruppen
-              </h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-[#68736e]">
-                Klimatechnik und Dachdecker werden mit eigenständigen
-                Branchenfiltern gespeichert und unabhängig voneinander
-                ausgeführt.
-              </p>
-            </div>
-            <div className="mt-5 grid gap-5 xl:grid-cols-2">
-              {acquisitionTargetPresets.map((preset) => (
-                <article
-                  key={preset.name}
-                  className="rounded-xl border border-[#d8d5cc] bg-[#faf9f6] p-6"
-                >
-                  <h3 className="text-lg font-semibold">{preset.name}</h3>
-                  <p className="mt-2 min-h-12 text-sm leading-6 text-[#68736e]">
-                    {preset.description}
-                  </p>
-                  <p className="mt-4 text-xs text-[#7a8580]">
-                    {preset.industryCodes.length === 1
-                      ? "1 amtliche WZ-2025-Branche"
-                      : `${preset.industryCodes.length} amtliche WZ-2025-Branchen`}
-                  </p>
-                  <div className="mt-5">
-                    <SearchBuilder
-                      preset={preset}
-                      triggerLabel={`${preset.name} einrichten`}
-                      workspaceId={user.workspaceId}
-                    />
-                  </div>
-                </article>
-              ))}
-            </div>
-          </section>
-
           {searches.length ? (
-            <section className="mt-10">
+            <section className="mt-8">
               <h2 className="text-xl font-semibold">Gespeicherte Suchen</h2>
               <div className="mt-5 grid gap-5 xl:grid-cols-2">
                 {searches.map((search) => (
@@ -134,7 +97,18 @@ export default async function SearchesPage() {
                 ))}
               </div>
             </section>
-          ) : null}
+          ) : (
+            <section className="mt-8 rounded-2xl border border-dashed border-[#c9c6bd] bg-[#faf9f6] px-6 py-12 text-center">
+              <h2 className="text-xl font-semibold">
+                Noch keine gespeicherten Suchen
+              </h2>
+              <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-[#68736e]">
+                Erstellen Sie über „Neue Suche erstellen“ eine Abfrage ohne
+                vorausgewählte Zielgruppe. Nach dem Speichern erscheint sie
+                hier.
+              </p>
+            </section>
+          )}
         </>
       )}
     </div>
