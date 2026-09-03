@@ -20,6 +20,7 @@ type Stage =
 type PreviousRun = {
   stage: Stage;
   provider: string;
+  status: "succeeded" | "failed";
   completedAt: string | null;
   available: boolean;
   candidates: number | null;
@@ -118,6 +119,9 @@ export function CompanyActions({
   const [completedStages, setCompletedStages] = useState<Set<Stage>>(
     () => new Set(),
   );
+  const [stageErrors, setStageErrors] = useState<
+    Partial<Record<Stage, string>>
+  >({});
   const [websiteToast, setWebsiteToast] = useState<WebsiteToast | null>(null);
   useEffect(() => {
     if (!websiteToast) return;
@@ -156,6 +160,7 @@ export function CompanyActions({
       website?: string | null;
       candidates?: number;
       rejected?: number;
+      running?: boolean;
     };
     if (!response.ok)
       throw new Error(result.error ?? `${stage} ist fehlgeschlagen`);
@@ -165,8 +170,10 @@ export function CompanyActions({
   async function runOne(stage: Stage) {
     const action = actions.find((candidate) => candidate.stage === stage);
     const key = `${action?.provider ?? "openregister"}:${stage}`;
-    if (latest.has(key) || completedStages.has(stage)) return;
+    if (latest.get(key)?.status === "succeeded" || completedStages.has(stage))
+      return;
     setBusy(stage);
+    setStageErrors((current) => ({ ...current, [stage]: undefined }));
     setMessage(
       stage === "website_discovery"
         ? "Website-Suche gestartet. Tavily sucht nach der offiziellen Website und Firecrawl prüft sie bei Bedarf."
@@ -175,6 +182,13 @@ export function CompanyActions({
     if (stage === "website_discovery") setWebsiteToast(null);
     try {
       const result = await run(stage);
+      if (result.running) {
+        setMessage(
+          `${action?.label ?? stage} läuft bereits. Die Ergebnisse werden nach Abschluss geladen.`,
+        );
+        router.refresh();
+        return;
+      }
       if (stage === "website_discovery") {
         const found = result.available !== false;
         setWebsiteToast({ kind: found ? "success" : "not-found" });
@@ -200,11 +214,12 @@ export function CompanyActions({
       setCompletedStages((current) => new Set(current).add(stage));
       router.refresh();
     } catch (error) {
-      setMessage(
+      const errorMessage =
         error instanceof Error
           ? error.message
-          : "Anbieteraktion fehlgeschlagen",
-      );
+          : "Anbieteraktion fehlgeschlagen";
+      setStageErrors((current) => ({ ...current, [stage]: errorMessage }));
+      setMessage(errorMessage);
     } finally {
       setBusy(null);
     }
@@ -214,7 +229,8 @@ export function CompanyActions({
     const remaining = actions.filter(
       (action) =>
         action.provider === "openregister" &&
-        !latest.has(`${action.provider}:${action.stage}`) &&
+        latest.get(`${action.provider}:${action.stage}`)?.status !==
+          "succeeded" &&
         !completedStages.has(action.stage),
     );
     if (!remaining.length) return;
@@ -241,7 +257,8 @@ export function CompanyActions({
   const remainingOpenRegisterActions = actions.filter(
     (action) =>
       action.provider === "openregister" &&
-      !latest.has(`${action.provider}:${action.stage}`) &&
+      latest.get(`${action.provider}:${action.stage}`)?.status !==
+        "succeeded" &&
       !completedStages.has(action.stage),
   ).length;
   const allOpenRegisterActionsCompleted = remainingOpenRegisterActions === 0;
@@ -309,8 +326,15 @@ export function CompanyActions({
           displayProviders,
         }) => {
           const previous = latest.get(`${provider}:${stage}`);
-          const completed = Boolean(previous) || completedStages.has(stage);
+          const completed =
+            previous?.status === "succeeded" || completedStages.has(stage);
           const isRunning = busy === stage;
+          const failureMessage = completed
+            ? null
+            : (stageErrors[stage] ??
+              (previous?.status === "failed"
+                ? `Die letzte Anfrage${previous.completedAt ? ` vom ${formatRunDate(previous.completedAt)}` : ""} ist fehlgeschlagen.`
+                : null));
           const shownProviders = displayProviders ?? [provider];
           const needsWebsite =
             (provider === "apollo" || provider === "firecrawl") && !hasWebsite;
@@ -326,7 +350,9 @@ export function CompanyActions({
                   ? "cursor-wait border-[#6db69f] bg-[#eef8f4] shadow-[0_0_0_2px_rgba(19,116,95,0.08)]"
                   : completed
                     ? "cursor-not-allowed border-[#dddcd7] bg-[#efefec] text-[#77807c]"
-                    : "border-[#d8d5cc] bg-white hover:border-[#9fc9bc]"
+                    : failureMessage
+                      ? "border-[#e3b49e] bg-[#fff8f4] hover:border-[#c98262]"
+                      : "border-[#d8d5cc] bg-white hover:border-[#9fc9bc]"
               } disabled:hover:border-[#dddcd7]`}
             >
               <span className="relative flex shrink-0 -space-x-2 py-1">
@@ -361,7 +387,9 @@ export function CompanyActions({
                     ? stage === "website_discovery"
                       ? "Website-Suche läuft…"
                       : `${label} läuft…`
-                    : label}
+                    : failureMessage
+                      ? `${label} erneut versuchen`
+                      : label}
                 </span>
                 {isRunning ? (
                   <span
@@ -387,6 +415,22 @@ export function CompanyActions({
                   <span className="mt-1 block text-xs font-medium text-[#8b5a2b]">
                     Nicht verfügbar, bis eine verifizierte Website gespeichert
                     ist
+                  </span>
+                ) : null}
+                {!isRunning && failureMessage ? (
+                  <span
+                    role="alert"
+                    className="mt-1.5 flex items-start gap-1.5 text-xs font-medium leading-5 text-[#9a492d]"
+                  >
+                    <AlertCircle
+                      aria-hidden="true"
+                      size={12}
+                      className="mt-1 shrink-0"
+                    />
+                    <span>
+                      {failureMessage} Erneut versuchen verbraucht
+                      möglicherweise einen weiteren Credit.
+                    </span>
                   </span>
                 ) : null}
                 {completed ? (
