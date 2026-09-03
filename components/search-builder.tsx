@@ -14,12 +14,11 @@ import {
   Save,
   Search,
 } from "lucide-react";
-import {
-  acquisitionTargetPreset,
-  type AcquisitionTargetPreset,
-  describeAcquisitionPreset,
-} from "@/lib/acquisition-target-preset";
 import { germanStates, registerCourtsForStates } from "@/lib/german-states";
+import {
+  describeSavedSearch,
+  type SavedSearchFilter,
+} from "@/lib/search-summary";
 import { filterWz2025Industries, wz2025Industries } from "@/lib/wz2025";
 
 const providerCosts = {
@@ -71,12 +70,10 @@ function formatLocalizedNumber(value: string) {
 }
 
 export function SearchBuilder({
-  triggerLabel = "Neue gespeicherte Suche",
-  preset = acquisitionTargetPreset,
+  triggerLabel = "Neue Suche erstellen",
   workspaceId,
 }: {
   triggerLabel?: string;
-  preset?: AcquisitionTargetPreset;
   workspaceId: string;
 }) {
   const router = useRouter();
@@ -93,16 +90,11 @@ export function SearchBuilder({
   const [dailyTarget, setDailyTarget] = useState(10);
   const [mode, setMode] = useState<"lean" | "full">("full");
   const [executionMode, setExecutionMode] = useState<ExecutionMode>("once");
-  const [selectedIndustries, setSelectedIndustries] = useState<string[]>([
-    ...preset.industryCodes,
-  ]);
+  const [status, setStatus] = useState<"active" | "all">("all");
+  const [selectedIndustries, setSelectedIndustries] = useState<string[]>([]);
   const [industryQuery, setIndustryQuery] = useState("");
-  const [selectedStates, setSelectedStates] = useState<string[]>([
-    ...preset.states,
-  ]);
-  const [selectedLegalForms, setSelectedLegalForms] = useState<string[]>([
-    ...preset.legalForms,
-  ]);
+  const [selectedStates, setSelectedStates] = useState<string[]>([]);
+  const [selectedLegalForms, setSelectedLegalForms] = useState<string[]>([]);
   const [requireReportedEbitda, setRequireReportedEbitda] = useState(false);
   const [advancedFinancials, setAdvancedFinancials] = useState(false);
   const dailyCost = useMemo(
@@ -116,21 +108,48 @@ export function SearchBuilder({
             : 0)),
     [dailyTarget, mode],
   );
+  const industryNames = selectedIndustries
+    .map(
+      (code) =>
+        wz2025Industries.find((industry) => industry.code === code)?.name,
+    )
+    .filter((name): name is string => Boolean(name));
+  const currentSelectionSummary = describeSavedSearch({
+    filters: [
+      ...(status === "active" ? [{ field: "status", value: "active" }] : []),
+      ...(selectedLegalForms.length
+        ? [{ field: "legal_form", values: selectedLegalForms }]
+        : []),
+      ...(selectedIndustries.length
+        ? [{ field: "industry_codes", values: selectedIndustries }]
+        : []),
+    ],
+    industryNames,
+    states: selectedStates,
+  });
+
+  function openBuilder() {
+    setDailyTarget(10);
+    setMode("full");
+    setExecutionMode("once");
+    setStatus("all");
+    setSelectedIndustries([]);
+    setIndustryQuery("");
+    setSelectedStates([]);
+    setSelectedLegalForms([]);
+    setRequireReportedEbitda(false);
+    setAdvancedFinancials(false);
+    setMessage("");
+    setOpen(true);
+  }
 
   function requestBody(runNow: boolean, activateSchedule = false) {
     const form = formRef.current;
     if (!form) throw new Error("Das Suchformular ist nicht verfügbar.");
     const data = new FormData(form);
-    const filters: Array<{
-      field: string;
-      value?: string;
-      min?: string;
-      max?: string;
-      values?: string[];
-      keywords?: string[];
-    }> = [];
-    filters.push({ field: "legal_form", values: selectedLegalForms });
-    const status = String(data.get("status") ?? "active");
+    const filters: SavedSearchFilter[] = [];
+    if (selectedLegalForms.length)
+      filters.push({ field: "legal_form", values: selectedLegalForms });
     if (status !== "all") filters.unshift({ field: "status", value: status });
     if (selectedIndustries.length)
       filters.push({ field: "industry_codes", values: selectedIndustries });
@@ -184,25 +203,13 @@ export function SearchBuilder({
         value: field === "has_open_insolvency" ? "false" : "true",
       });
     }
-    const industryNames = selectedIndustries
-      .map(
-        (code) =>
-          wz2025Industries.find((industry) => industry.code === code)?.name,
-      )
-      .filter((name): name is string => Boolean(name));
-    const excludesOpenInsolvency = filters.some(
-      (filter) =>
-        filter.field === "has_open_insolvency" && filter.value === "false",
-    );
     return {
       name: String(data.get("name") ?? "").trim(),
       description: String(data.get("description") ?? "").trim(),
-      summary: describeAcquisitionPreset({
+      summary: describeSavedSearch({
+        filters,
         industryNames,
         states: selectedStates,
-        legalForms: selectedLegalForms,
-        requireReportedEbitda,
-        excludeOpenInsolvency: excludesOpenInsolvency,
       }),
       filters,
       hydrationMode: mode,
@@ -313,7 +320,7 @@ export function SearchBuilder({
     <div className="flex flex-col items-start gap-2 md:items-end">
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={openBuilder}
         className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#15352e] px-4 text-sm font-medium text-white"
       >
         <Plus size={15} /> {triggerLabel}
@@ -353,24 +360,31 @@ export function SearchBuilder({
               <Section title="Suchangaben">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Field label="Name der Suche">
-                    <input name="name" defaultValue={preset.name} required />
+                    <input
+                      name="name"
+                      placeholder="z. B. Maschinenbau in Bayern"
+                      required
+                    />
                   </Field>
                   <Field label="Beschreibung">
-                    <input
-                      name="description"
-                      defaultValue={preset.description}
-                    />
+                    <input name="description" placeholder="Optional" />
                   </Field>
                 </div>
               </Section>
               <Section title="Unternehmensprofil">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Field label="Unternehmensstatus">
-                    <select name="status" defaultValue="active">
-                      <option value="active">Nur aktive Unternehmen</option>
+                    <select
+                      name="status"
+                      value={status}
+                      onChange={(event) =>
+                        setStatus(event.target.value as typeof status)
+                      }
+                    >
                       <option value="all">
                         Aktive und inaktive Unternehmen
                       </option>
+                      <option value="active">Nur aktive Unternehmen</option>
                     </select>
                   </Field>
                   <div>
@@ -423,15 +437,15 @@ export function SearchBuilder({
                   <Range
                     field="revenue"
                     label="Umsatz · EUR"
-                    min={preset.revenueEur.min}
-                    max={preset.revenueEur.max}
+                    min=""
+                    max=""
                     formattedNumber
                   />
                   <Range
                     field="ebitda"
                     label="EBITDA · EUR"
-                    min={preset.preferredEbitdaEur.min}
-                    max={preset.preferredEbitdaEur.max}
+                    min=""
+                    max=""
                     disabled={!requireReportedEbitda}
                     formattedNumber
                   />
@@ -453,13 +467,13 @@ export function SearchBuilder({
                   />
                   <span>
                     <span className="block font-semibold">
-                      Gemeldetes EBITDA zwischen 2 Mio. € und 5 Mio. €
-                      voraussetzen
+                      Gemeldetes EBITDA als Filter verwenden
                     </span>
                     <span className="mt-1 block leading-5 text-[#6f7b76]">
-                      Standardmäßig deaktiviert. Der Umsatzbereich von 10–50
-                      Mio. € unterstellt eine EBITDA-Marge von 10–20 % und
-                      schließt Unternehmen ohne gemeldetes EBITDA nicht aus.
+                      Aktivieren Sie diese Option, um oben einen eigenen
+                      EBITDA-Bereich festzulegen. Ohne Auswahl werden
+                      Unternehmen unabhängig von gemeldeten EBITDA-Daten
+                      berücksichtigt.
                     </span>
                   </span>
                 </label>
@@ -525,7 +539,7 @@ export function SearchBuilder({
                       false,
                     ],
                     ["Alleineigentümer", "has_sole_owner", true],
-                  ].map(([label, field, enterprise], index) => (
+                  ].map(([label, field, enterprise]) => (
                     <label
                       key={String(label)}
                       className="flex items-center gap-3 rounded-lg border border-[#dfdcd4] bg-white p-3 text-xs"
@@ -534,7 +548,6 @@ export function SearchBuilder({
                         type="checkbox"
                         name="ownership_filter"
                         value={String(field)}
-                        defaultChecked={index === 2}
                       />
                       <span>
                         {label}
@@ -566,7 +579,7 @@ export function SearchBuilder({
                   <Field label="Unternehmensgegenstand · eines der Stichwörter">
                     <input
                       name="purpose_keywords"
-                      placeholder={preset.purposeKeywordSuggestions.join(", ")}
+                      placeholder="z. B. Maschinenbau, Instandhaltung"
                     />
                   </Field>
                 </div>
@@ -723,12 +736,8 @@ export function SearchBuilder({
                   Zusammenfassung
                 </p>
                 <p className="mt-2 text-sm leading-6">
-                  {preset.description} Regionen: {selectedStates.join(", ")};
-                  GmbH- und KG-Kandidaten; 10–50 Mio. € Umsatz; laufende
-                  Insolvenzen ausgeschlossen. Ein EBITDA von 2–5 Mio. € ist eine
-                  Präferenz, sofern es oben nicht ausdrücklich vorausgesetzt
-                  wird. Pro Lauf werden höchstens {dailyTarget} passende
-                  Unternehmen verarbeitet.{" "}
+                  {currentSelectionSummary} Pro Lauf werden höchstens{" "}
+                  {dailyTarget} passende Unternehmen verarbeitet.{" "}
                   {executionMode === "once"
                     ? "Die Suche wird einmalig ausgeführt."
                     : "Die Suche wird täglich wiederholt."}
@@ -1030,7 +1039,6 @@ function LegalFormSelector({
               type="checkbox"
               checked={checked}
               onChange={() => {
-                if (checked && selected.length === 1) return;
                 onSelectedChange(
                   checked
                     ? selected.filter((value) => value !== option.value)

@@ -2,7 +2,6 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/db/admin";
-import { matchesAcquisitionLegalForm } from "@/lib/acquisition-target-preset";
 import {
   runOpenRegisterEnrichment,
   type OpenRegisterStage,
@@ -18,6 +17,7 @@ import {
   ProviderError,
   type ProviderRequestMetrics,
 } from "@/lib/integrations/http";
+import { matchesSelectedLegalForm } from "@/lib/discovery/search-filters";
 
 type SavedSearchRow = {
   id: string;
@@ -126,7 +126,7 @@ export async function runSavedSearch(search: SavedSearchRow) {
       }
       const qualifyingCount = selectedLegalForms.length
         ? providerResults.filter((company) =>
-            matchesAcquisitionLegalForm(company, selectedLegalForms),
+            matchesSelectedLegalForm(company, selectedLegalForms),
           ).length
         : providerResults.length;
       const pagination = response.pagination as Record<string, unknown>;
@@ -143,7 +143,7 @@ export async function runSavedSearch(search: SavedSearchRow) {
     const results = (
       selectedLegalForms.length
         ? providerResults.filter((company) =>
-            matchesAcquisitionLegalForm(company, selectedLegalForms),
+            matchesSelectedLegalForm(company, selectedLegalForms),
           )
         : providerResults
     ).slice(0, target);
