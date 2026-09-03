@@ -26,7 +26,10 @@
     "format:write": "prettier --write .",
     "test": "vitest run",
     "test:rls": "supabase start --exclude realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor && node scripts/verify-rls-local.mjs",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "browser": "agent-browser",
+    "browser:install": "agent-browser install",
+    "browser:doctor": "agent-browser doctor"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.5",
@@ -55,6 +58,7 @@
     "@types/react-dom": "19.2.5",
     "@vitejs/plugin-react": "6.1.1",
     "@vitejs/plugin-rsc": "0.5.34",
+    "agent-browser": "0.27.0",
     "eslint": "9.39.4",
     "eslint-config-next": "16.3.4",
     "prettier": "3.9.6",
