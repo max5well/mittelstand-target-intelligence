@@ -60,8 +60,10 @@ export default async function CompanyDetailPage({
           "firecrawl_website",
           "tavily_research",
         ].includes(job.type) &&
-        job.status === "succeeded" &&
-        !latest.has(job.type)
+        (job.status === "succeeded" || job.status === "failed") &&
+        (!latest.has(job.type) ||
+          (job.status === "succeeded" &&
+            latest.get(job.type)?.status === "failed"))
       )
         latest.set(job.type, {
           stage: job.type as
@@ -73,13 +75,14 @@ export default async function CompanyDetailPage({
             | "firecrawl_website"
             | "tavily_research",
           provider: job.provider,
+          status: job.status as "succeeded" | "failed",
           completedAt: job.completedAt,
           available: job.available !== false,
           candidates: job.candidates,
           rejected: job.rejected,
         });
       return latest;
-    }, new Map<string, { stage: "details" | "financials" | "owners" | "website_discovery" | "apollo_organization" | "firecrawl_website" | "tavily_research"; provider: string; completedAt: string | null; available: boolean; candidates: number | null; rejected: number | null }>()),
+    }, new Map<string, { stage: "details" | "financials" | "owners" | "website_discovery" | "apollo_organization" | "firecrawl_website" | "tavily_research"; provider: string; status: "succeeded" | "failed"; completedAt: string | null; available: boolean; candidates: number | null; rejected: number | null }>()),
   ).map(([, run]) => run);
 
   return (

@@ -2,26 +2,32 @@ import "server-only";
 import { z } from "zod";
 import { fetchProvider, type ProviderRequestMetrics } from "../http";
 
-const ApolloOrganizationSchema = z
+const ApolloOrganizationDataSchema = z
   .object({
-    organization: z
-      .object({
-        id: z.string().optional(),
-        name: z.string(),
-        website_url: z.string().nullable().optional(),
-        primary_domain: z.string().nullable().optional(),
-        estimated_num_employees: z.number().nullable().optional(),
-        annual_revenue: z.number().nullable().optional(),
-        country: z.string().nullable().optional(),
-        industry: z.string().nullable().optional(),
-        founded_year: z.number().int().nullable().optional(),
-        total_funding: z.number().nullable().optional(),
-        technologies: z.array(z.unknown()).optional(),
-        owned_by_organization: z.unknown().optional(),
-        ultimate_parent_organization: z.unknown().optional(),
-      })
-      .passthrough()
-      .nullable(),
+    id: z.string().optional(),
+    name: z.string(),
+    website_url: z.string().nullable().optional(),
+    primary_domain: z.string().nullable().optional(),
+    estimated_num_employees: z.number().nullable().optional(),
+    annual_revenue: z.number().nullable().optional(),
+    country: z.string().nullable().optional(),
+    industry: z.string().nullable().optional(),
+    founded_year: z.number().int().nullable().optional(),
+    total_funding: z.number().nullable().optional(),
+    technologies: z.array(z.unknown()).optional(),
+    owned_by_organization: z.unknown().optional(),
+    ultimate_parent_organization: z.unknown().optional(),
+  })
+  .passthrough();
+
+export const ApolloOrganizationSchema = z
+  .object({
+    // Apollo can omit `organization` on a successful no-match response.
+    // Normalize that outcome to the same shape as an explicit null.
+    organization: z.preprocess(
+      (value) => (value === undefined ? null : value),
+      ApolloOrganizationDataSchema.nullable(),
+    ),
   })
   .passthrough();
 
