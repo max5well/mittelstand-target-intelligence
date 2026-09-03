@@ -65,6 +65,7 @@ export default async function SearchesPage() {
                   </p>
                   <div className="mt-5">
                     <SearchBuilder
+                      workspaceId={user.workspaceId}
                       preset={preset}
                       triggerLabel={`${preset.name} einrichten`}
                     />
