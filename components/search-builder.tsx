@@ -20,7 +20,7 @@ import {
   describeAcquisitionPreset,
 } from "@/lib/acquisition-target-preset";
 import { germanStates, registerCourtsForStates } from "@/lib/german-states";
-import { wz2025Industries } from "@/lib/wz2025";
+import { filterWz2025Industries, wz2025Industries } from "@/lib/wz2025";
 
 const providerCosts = {
   searchRunMaximum: 100,
@@ -397,8 +397,9 @@ export function SearchBuilder({
                       onSelectedChange={setSelectedIndustries}
                     />
                     <p className="mt-2 text-xs leading-5 text-[#7a8580]">
-                      Branchen werden nach Namen ausgewählt. Die erforderlichen
-                      WZ-2025-Codes werden im Hintergrund übermittelt.
+                      Branchen können nach Namen oder WZ-2025-Code gesucht
+                      werden. Die ausgewählten Codes werden im Hintergrund
+                      übermittelt.
                     </p>
                   </div>
                   <div>
@@ -876,13 +877,10 @@ function IndustrySelector({
   selected: string[];
   onSelectedChange: (value: string[]) => void;
 }) {
-  const filteredIndustries = useMemo(() => {
-    const term = query.trim().toLocaleLowerCase("de");
-    if (!term) return wz2025Industries;
-    return wz2025Industries.filter((industry) =>
-      industry.name.toLocaleLowerCase("de").includes(term),
-    );
-  }, [query]);
+  const filteredIndustries = useMemo(
+    () => filterWz2025Industries(query),
+    [query],
+  );
   const selectedSet = new Set(selected);
   return (
     <details className="group relative mt-2">
@@ -892,7 +890,7 @@ function IndustrySelector({
         >
           {selected.length
             ? `${selected.length} ${selected.length === 1 ? "Branche" : "Branchen"} ausgewählt`
-            : "Branchen nach Namen auswählen"}
+            : "Branchen nach Name oder Code auswählen"}
         </span>
         <ChevronDown
           size={16}
@@ -904,8 +902,8 @@ function IndustrySelector({
           type="search"
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
-          placeholder="Suchen, z. B. Elektronik, Maschinenbau …"
-          aria-label="Branchen nach Namen durchsuchen"
+          placeholder="Suchen, z. B. 43.22, Elektronik …"
+          aria-label="Branchen nach Namen oder WZ-Code durchsuchen"
           className="form-control"
         />
         <div className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-[#ebe8e1]">
@@ -929,7 +927,12 @@ function IndustrySelector({
                     }
                     className="mt-0.5"
                   />
-                  <span>{industry.name}</span>
+                  <span>
+                    <span className="mr-2 font-mono text-xs font-semibold text-[#52605a]">
+                      {industry.code}
+                    </span>
+                    {industry.name}
+                  </span>
                 </label>
               );
             })

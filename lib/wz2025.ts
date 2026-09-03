@@ -1432,3 +1432,20 @@ const wz2025IndustryNames = new Map(
 export function getWz2025IndustryName(code: string): string {
   return wz2025IndustryNames.get(code) ?? "Nicht zugeordnet";
 }
+
+export function filterWz2025Industries(query: string): Wz2025Industry[] {
+  const term = query.trim().toLocaleLowerCase("de");
+  if (!term) return wz2025Industries;
+
+  const compactCodeTerm = /^[\d\s.-]+$/.test(term)
+    ? term.replace(/\D/g, "")
+    : "";
+
+  return wz2025Industries.filter(
+    (industry) =>
+      industry.name.toLocaleLowerCase("de").includes(term) ||
+      industry.code.includes(term) ||
+      (compactCodeTerm.length > 0 &&
+        industry.code.replace(/\D/g, "").includes(compactCodeTerm)),
+  );
+}
