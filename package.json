@@ -42,7 +42,7 @@
     "recharts": "3.10.1",
     "server-only": "0.0.1",
     "tailwind-merge": "3.6.0",
-    "zod": "4.5.4"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.54.3",
